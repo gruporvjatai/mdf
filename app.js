@@ -1,499 +1,456 @@
-// Inicializa cliente Supabase
+// Instância Supabase (sem conflito)
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
-// Armazena a logo em base64 (carregada automaticamente)
-let logoBase64 = '';
+// Estado global
+let itens = [];
+let orcamentoAtualId = null;
 
-// Carregar a logo ao iniciar
-(async function carregarLogo() {
-  try {
-    const resp = await fetch('logo.png');
-    const blob = await resp.blob();
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      logoBase64 = reader.result;
-    };
-    reader.readAsDataURL(blob);
-  } catch (e) {
-    console.warn('Logo não encontrada, será usado texto no PDF.');
+// ==================== FUNÇÕES DE LISTAGEM ====================
+window.renderOrcamentos = async () => {
+  const lista = document.getElementById('lista-orcamentos');
+  lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Carregando...</td></tr>';
+
+  const search = document.getElementById('search-quotes')?.value.toLowerCase() || '';
+  const statusFiltro = document.getElementById('status-filter')?.value || '';
+
+  let query = supabaseClient.from('mdf_orcamentos').select('*').order('created_at', { ascending: false });
+  if (statusFiltro) query = query.eq('status', statusFiltro);
+
+  const { data: orcamentos, error } = await query;
+  if (error) {
+    console.error(error);
+    lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-400">Erro ao carregar.</td></tr>';
+    return;
   }
-})();
 
-// Estado do modal
-let itens = []; // cada item: { nome, descricao, preco, desconto, fotoBase64, fotoFile }
-let itemIdCounter = 0;
+  // Filtro local por nome
+  const filtrados = orcamentos.filter(o => !search || (o.cliente_nome && o.cliente_nome.toLowerCase().includes(search)));
 
-// Elementos do DOM
-const modalOverlay = document.getElementById('modal-novo');
-const btnNovo = document.getElementById('btn-novo');
-const btnFechar = document.getElementById('btn-fechar-modal');
-const btnCancelar = document.getElementById('btn-cancelar');
-const btnAddItem = document.getElementById('btn-add-item');
-const listaItens = document.getElementById('lista-itens');
-const btnGerarPdf = document.getElementById('btn-gerar-pdf');
-const listaOrcamentos = document.getElementById('lista-orcamentos');
+  if (!filtrados.length) {
+    lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Nenhum orçamento encontrado.</td></tr>';
+    return;
+  }
 
-// --- Funções de Modal ---
-function abrirModal() {
-  modalOverlay.classList.add('active');
-  limparFormulario();
-}
+  // Busca totais e contagem de itens para cada orçamento
+  const dados = await Promise.all(filtrados.map(async (orc) => {
+    const { data: itensData } = await supabaseClient.from('mdf_itens').select('preco, desconto').eq('orcamento_id', orc.id);
+    const total = itensData ? itensData.reduce((s, i) => s + parseFloat(i.preco) - parseFloat(i.desconto || 0), 0) : 0;
+    return { ...orc, total, itensCount: itensData?.length || 0 };
+  }));
 
-function fecharModal() {
-  modalOverlay.classList.remove('active');
-  limparFormulario();
-}
+  lista.innerHTML = dados.map(orc => {
+    const statusClass = {
+      'ABERTO': 'status-aberto',
+      'EM NEGOCIAÇÃO': 'status-negociacao',
+      'APROVADO': 'status-aprovado',
+      'PERDIDO': 'status-perdido'
+    }[orc.status] || 'status-aberto';
 
-function limparFormulario() {
-  document.getElementById('nome').value = '';
-  document.getElementById('telefone').value = '';
-  document.getElementById('email').value = '';
-  document.getElementById('obs').value = '';
-  listaItens.innerHTML = '';
+    return `
+      <tr class="hover:bg-slate-50 transition">
+        <td class="p-4">
+          <div class="font-black text-slate-700">#${orc.id}</div>
+          <div class="text-xs text-slate-400">${new Date(orc.created_at).toLocaleDateString('pt-BR')}</div>
+        </td>
+        <td class="p-4">
+          <div class="font-bold text-slate-800">${orc.cliente_nome || 'Consumidor Final'}</div>
+          <div class="text-xs text-slate-500">${orc.itensCount} itens</div>
+        </td>
+        <td class="p-4 font-bold text-slate-800">R$ ${orc.total.toFixed(2)}</td>
+        <td class="p-4 text-center">
+          <span class="status-badge ${statusClass}">${orc.status}</span>
+        </td>
+        <td class="p-4">
+          <div class="flex items-center justify-center gap-2">
+            <button onclick="window.editarOrcamento(${orc.id})" class="p-2 border border-[#b8a94e] bg-white text-[#b8a94e] hover:bg-amber-50 rounded-lg shadow-sm" title="Editar">
+              <i data-lucide="edit-3" class="w-4 h-4"></i>
+            </button>
+            <button onclick="window.duplicarOrcamento(${orc.id})" class="p-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg shadow-sm" title="Duplicar">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+            </button>
+            <button onclick="window.baixarPDF(${orc.id})" class="p-2 border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 rounded-lg shadow-sm" title="Baixar PDF">
+              <i data-lucide="download" class="w-4 h-4"></i>
+            </button>
+            <button onclick="window.imprimirOrcamento(${orc.id})" class="p-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg shadow-sm" title="Imprimir">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+            </button>
+            <button onclick="window.excluirOrcamento(${orc.id})" class="p-2 border border-red-200 bg-white text-red-500 hover:bg-red-50 rounded-lg shadow-sm" title="Excluir">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+};
+
+// ==================== MODAL ====================
+window.abrirNovoOrcamento = async () => {
+  orcamentoAtualId = null;
+  document.getElementById('modal-titulo').innerText = 'Novo Orçamento';
+  document.getElementById('orcamento-id').value = '';
+  document.getElementById('cliente').value = '';
+  document.getElementById('status').value = 'ABERTO';
+  document.getElementById('observacoes').value = '';
+  document.getElementById('tipo-desconto').value = '$';
+  document.getElementById('valor-desconto').value = '0';
   itens = [];
-  itemIdCounter = 0;
-  recalcular();
+  renderizarItens();
+  atualizarTotais();
+  await carregarClientesSelect();
+  document.getElementById('modal-orcamento').classList.add('active');
+  lucide.createIcons();
+};
+
+window.editarOrcamento = async (id) => {
+  orcamentoAtualId = id;
+  document.getElementById('modal-titulo').innerText = `Editar Orçamento #${id}`;
+
+  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select('*').eq('id', id).single();
+  if (orc) {
+    document.getElementById('status').value = orc.status || 'ABERTO';
+    document.getElementById('observacoes').value = orc.observacoes || '';
+    // Cliente
+    await carregarClientesSelect();
+    if (orc.cliente_nome) {
+      const { data: cliente } = await supabaseClient.from('clientes').select('id').eq('nome', orc.cliente_nome).maybeSingle();
+      document.getElementById('cliente').value = cliente?.id || '';
+    }
+  }
+
+  const { data: itensData } = await supabaseClient.from('mdf_itens').select('*').eq('orcamento_id', id);
+  itens = itensData ? itensData.map(i => ({
+    id: i.id,
+    nome: i.nome,
+    descricao: i.descricao || '',
+    preco: parseFloat(i.preco),
+    desconto: parseFloat(i.desconto || 0),
+    foto_url: i.foto_url || '',
+    foto_file: null,
+    removido: false
+  })) : [];
+
+  const totalDesconto = itens.reduce((s, i) => s + i.desconto, 0);
+  document.getElementById('tipo-desconto').value = '$';
+  document.getElementById('valor-desconto').value = totalDesconto.toFixed(2);
+
+  renderizarItens();
+  atualizarTotais();
+  document.getElementById('modal-orcamento').classList.add('active');
+  lucide.createIcons();
+};
+
+window.fecharModal = () => {
+  document.getElementById('modal-orcamento').classList.remove('active');
+};
+
+async function carregarClientesSelect() {
+  const select = document.getElementById('cliente');
+  const { data } = await supabaseClient.from('clientes').select('*');
+  select.innerHTML = '<option value="">Selecione um cliente...</option>' +
+    (data || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
 }
 
-// --- Eventos Modal ---
-btnNovo.addEventListener('click', abrirModal);
-btnFechar.addEventListener('click', fecharModal);
-btnCancelar.addEventListener('click', fecharModal);
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) fecharModal();
-});
-
-// --- Adicionar Item ---
-btnAddItem.addEventListener('click', () => {
-  adicionarItem();
-});
-
-function adicionarItem(dados = {}) {
-  const id = ++itemIdCounter;
-  const item = {
-    id,
+// ==================== ITENS ====================
+window.adicionarItem = (dados = {}) => {
+  itens.push({
+    id: null,
     nome: dados.nome || '',
     descricao: dados.descricao || '',
     preco: dados.preco || 0,
     desconto: dados.desconto || 0,
-    fotoBase64: dados.fotoBase64 || '',
-    fotoFile: dados.fotoFile || null
-  };
-  itens.push(item);
-  renderizarItem(item);
-  recalcular();
+    foto_url: dados.foto_url || '',
+    foto_file: null,
+    removido: false
+  });
+  renderizarItens();
+  atualizarTotais();
+  lucide.createIcons();
+};
+
+window.removerItem = (index) => {
+  if (itens[index].id) {
+    itens[index].removido = true;
+  } else {
+    itens.splice(index, 1);
+  }
+  renderizarItens();
+  atualizarTotais();
+};
+
+function renderizarItens() {
+  const container = document.getElementById('container-itens');
+  container.innerHTML = itens.filter(i => !i.removido).map((item, idx) => `
+    <div class="flex flex-col md:flex-row gap-3 items-start border border-slate-200 rounded-xl p-3 bg-white">
+      <div class="flex-shrink-0 relative">
+        <img src="${item.foto_url || 'https://via.placeholder.com/80'}" class="w-20 h-20 object-cover rounded-lg border cursor-pointer" onclick="this.nextElementSibling.click()" alt="Foto do item">
+        <input type="file" accept="image/*" class="hidden" onchange="window.uploadImagemItem(this, ${idx})">
+      </div>
+      <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 w-full">
+        <input type="text" placeholder="Nome do móvel" value="${item.nome}" onchange="window.atualizarItem(${idx}, 'nome', this.value)" class="p-2 border rounded text-sm w-full">
+        <input type="text" placeholder="Medidas / descrição" value="${item.descricao}" onchange="window.atualizarItem(${idx}, 'descricao', this.value)" class="p-2 border rounded text-sm w-full">
+        <input type="number" placeholder="Preço R$" value="${item.preco}" onchange="window.atualizarItem(${idx}, 'preco', parseFloat(this.value) || 0)" class="p-2 border rounded text-sm w-full" step="0.01">
+        <input type="number" placeholder="Desconto R$" value="${item.desconto}" onchange="window.atualizarItem(${idx}, 'desconto', parseFloat(this.value) || 0)" class="p-2 border rounded text-sm w-full" step="0.01">
+      </div>
+      <button onclick="window.removerItem(${idx})" class="text-red-400 hover:text-red-600 p-2"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+    </div>
+  `).join('');
 }
 
-function renderizarItem(item) {
-  const div = document.createElement('div');
-  div.className = 'item';
-  div.dataset.id = item.id;
-  div.innerHTML = `
-    <div class="item-header">
-      <span class="item-num">Item #${item.id}</span>
-      <button class="btn btn-sm btn-danger btn-remover" data-id="${item.id}">Remover</button>
-    </div>
-    <div class="item-grid">
-      <div>
-        <img class="item-foto" src="${item.fotoBase64 || ''}" alt="Foto" style="${item.fotoBase64 ? '' : 'display:none;'}">
-        <div class="item-foto-placeholder" data-id="${item.id}" style="${item.fotoBase64 ? 'display:none;' : ''}">
-          📷<br>Adicionar<br>foto
-        </div>
-        <input type="file" accept="image/*" style="display:none;" data-id="${item.id}">
+window.atualizarItem = (index, campo, valor) => {
+  itens[index][campo] = valor;
+  atualizarTotais();
+};
+
+window.uploadImagemItem = async (input, index) => {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('image', file);
+  try {
+    const resp = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_KEY}`, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await resp.json();
+    if (data.success) {
+      itens[index].foto_url = data.data.url;
+      renderizarItens();
+      lucide.createIcons();
+    } else {
+      alert('Erro ao enviar imagem.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao enviar imagem.');
+  }
+};
+
+window.atualizarTotais = () => {
+  const subtotal = itens.filter(i => !i.removido).reduce((s, i) => s + i.preco, 0);
+  const tipo = document.getElementById('tipo-desconto').value;
+  const valor = parseFloat(document.getElementById('valor-desconto').value) || 0;
+  const desconto = tipo === '%' ? subtotal * (valor / 100) : valor;
+  const total = Math.max(0, subtotal - desconto);
+  document.getElementById('subtotal').innerText = `R$ ${subtotal.toFixed(2)}`;
+  document.getElementById('total-geral').innerText = `R$ ${total.toFixed(2)}`;
+};
+
+// ==================== SALVAR / EXCLUIR / DUPLICAR ====================
+window.salvarOrcamento = async () => {
+  const clienteNome = document.getElementById('cliente').selectedOptions[0]?.text || 'Consumidor Final';
+  const status = document.getElementById('status').value;
+  const obs = document.getElementById('observacoes').value.trim();
+
+  if (orcamentoAtualId) {
+    // Atualiza
+    const { error: errOrc } = await supabaseClient.from('mdf_orcamentos').update({
+      cliente_nome: clienteNome,
+      status,
+      observacoes: obs
+    }).eq('id', orcamentoAtualId);
+    if (errOrc) return alert('Erro ao atualizar orçamento: ' + errOrc.message);
+
+    // Remove itens marcados
+    for (const item of itens.filter(i => i.removido && i.id)) {
+      await supabaseClient.from('mdf_itens').delete().eq('id', item.id);
+    }
+    // Atualiza/insere
+    for (const item of itens.filter(i => !i.removido)) {
+      const payload = {
+        orcamento_id: orcamentoAtualId,
+        nome: item.nome,
+        descricao: item.descricao,
+        preco: item.preco,
+        desconto: item.desconto,
+        foto_url: item.foto_url
+      };
+      if (item.id) {
+        await supabaseClient.from('mdf_itens').update(payload).eq('id', item.id);
+      } else {
+        await supabaseClient.from('mdf_itens').insert(payload);
+      }
+    }
+  } else {
+    // Novo
+    const { data: novo, error: errOrc } = await supabaseClient.from('mdf_orcamentos').insert({
+      cliente_nome: clienteNome,
+      status,
+      observacoes: obs
+    }).select().single();
+    if (errOrc) return alert('Erro ao criar orçamento: ' + errOrc.message);
+
+    const itensParaInserir = itens.filter(i => !i.removido).map(i => ({
+      orcamento_id: novo.id,
+      nome: i.nome,
+      descricao: i.descricao,
+      preco: i.preco,
+      desconto: i.desconto,
+      foto_url: i.foto_url
+    }));
+    if (itensParaInserir.length) {
+      await supabaseClient.from('mdf_itens').insert(itensParaInserir);
+    }
+  }
+
+  window.fecharModal();
+  window.renderOrcamentos();
+  alert('Orçamento salvo com sucesso!');
+};
+
+window.excluirOrcamento = async (id) => {
+  if (!confirm('Excluir este orçamento?')) return;
+  await supabaseClient.from('mdf_itens').delete().eq('orcamento_id', id);
+  await supabaseClient.from('mdf_orcamentos').delete().eq('id', id);
+  window.renderOrcamentos();
+};
+
+window.duplicarOrcamento = async (id) => {
+  if (!confirm('Duplicar este orçamento?')) return;
+  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select().eq('id', id).single();
+  if (!orc) return;
+  const { data: itensData } = await supabaseClient.from('mdf_itens').select().eq('orcamento_id', id);
+
+  const { data: novo } = await supabaseClient.from('mdf_orcamentos').insert({
+    cliente_nome: orc.cliente_nome,
+    status: 'ABERTO',
+    observacoes: orc.observacoes
+  }).select().single();
+
+  if (novo && itensData) {
+    const novosItens = itensData.map(i => ({
+      orcamento_id: novo.id,
+      nome: i.nome,
+      descricao: i.descricao,
+      preco: i.preco,
+      desconto: i.desconto,
+      foto_url: i.foto_url
+    }));
+    await supabaseClient.from('mdf_itens').insert(novosItens);
+  }
+  window.renderOrcamentos();
+  alert('Orçamento duplicado!');
+};
+
+// ==================== PDF ====================
+window.gerarPDF = async () => {
+  const clienteNome = document.getElementById('cliente').selectedOptions[0]?.text || 'Consumidor Final';
+  const obs = document.getElementById('observacoes').value;
+  const itensAtivos = itens.filter(i => !i.removido);
+  const subtotal = itensAtivos.reduce((s, i) => s + i.preco, 0);
+  const tipo = document.getElementById('tipo-desconto').value;
+  const valor = parseFloat(document.getElementById('valor-desconto').value) || 0;
+  const desconto = tipo === '%' ? subtotal * (valor / 100) : valor;
+  const total = Math.max(0, subtotal - desconto);
+
+  const rowsHtml = itensAtivos.map((item, idx) => `
+    <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
+      <td style="padding: 8px;">
+        ${item.foto_url ? `<img src="${item.foto_url}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; vertical-align:middle;"> ` : ''}
+        ${item.nome}
+      </td>
+      <td style="padding: 8px;">${item.descricao}</td>
+      <td style="padding: 8px; text-align: right;">R$ ${item.preco.toFixed(2)}</td>
+      <td style="padding: 8px; text-align: right;">R$ ${item.desconto.toFixed(2)}</td>
+      <td style="padding: 8px; text-align: right; font-weight: bold;">R$ ${(item.preco - item.desconto).toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  const html = `
+    <div style="font-family: Helvetica; padding: 20px; max-width: 800px; margin: auto; background: white;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="logo.png" style="height: 60px; display: block; margin: 0 auto;" onerror="this.style.display='none'">
+        <h2 style="color: #b8a94e; margin-top: 5px;">RV PORTAL MADEIRAS</h2>
+        <p style="font-size: 14px; color: #475569;">CNPJ: 30.942.123/0001-02 | Rua Mineiros, 532 - Jataí/GO</p>
+        <h3 style="margin-top: 20px;">ORÇAMENTO</h3>
       </div>
-      <div class="item-campos">
-        <input type="text" class="item-nome" placeholder="Nome do móvel" value="${item.nome}">
-        <input type="text" class="item-descricao" placeholder="Medidas / descrição" value="${item.descricao}">
-        <div class="item-preco-desconto">
-          <input type="number" class="item-preco" placeholder="Preço R$" step="0.01" min="0" value="${item.preco || ''}">
-          <input type="number" class="item-desconto" placeholder="Desconto R$" step="0.01" min="0" value="${item.desconto || ''}">
-        </div>
+      <div style="margin-bottom: 20px;">
+        <p><strong>Cliente:</strong> ${clienteNome}</p>
+        <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+        ${obs ? `<p><strong>Observações:</strong> ${obs}</p>` : ''}
+      </div>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <thead>
+          <tr style="background: #1e293b; color: white;">
+            <th style="padding: 8px; text-align: left;">Item</th>
+            <th style="padding: 8px; text-align: left;">Descrição</th>
+            <th style="padding: 8px; text-align: right;">Preço</th>
+            <th style="padding: 8px; text-align: right;">Desc.</th>
+            <th style="padding: 8px; text-align: right;">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <div style="text-align: right; font-size: 18px; font-weight: bold; border-top: 2px solid #1e293b; padding-top: 10px;">
+        Total: R$ ${total.toFixed(2)}
+      </div>
+      <div style="margin-top: 40px; text-align: center; font-size: 12px; color: #64748b;">
+        RV Portal Madeiras - Obrigado pela preferência!
       </div>
     </div>
   `;
 
-  // Eventos
-  const placeholder = div.querySelector('.item-foto-placeholder');
-  const fileInput = div.querySelector('input[type="file"]');
-  const img = div.querySelector('.item-foto');
-
-  placeholder?.addEventListener('click', () => fileInput.click());
-  img?.addEventListener('click', () => fileInput.click()); // clicar na foto também troca
-  fileInput.addEventListener('change', (e) => handleFileSelect(e, item.id));
-
-  const btnRemover = div.querySelector('.btn-remover');
-  btnRemover.addEventListener('click', () => {
-    removerItem(item.id);
-  });
-
-  // Atualiza valores nos inputs com event listeners
-  const inputs = div.querySelectorAll('input[type="text"], input[type="number"]');
-  inputs.forEach(input => {
-    input.addEventListener('input', () => {
-      atualizarItemDoDOM(item.id);
-      recalcular();
-    });
-  });
-
-  listaItens.appendChild(div);
-}
-
-function handleFileSelect(event, itemId) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const item = itens.find(i => i.id == itemId);
-    if (item) {
-      item.fotoBase64 = e.target.result;
-      item.fotoFile = file;
-      // Atualiza visual
-      const itemDiv = document.querySelector(`.item[data-id="${itemId}"]`);
-      if (itemDiv) {
-        const img = itemDiv.querySelector('.item-foto');
-        const placeholder = itemDiv.querySelector('.item-foto-placeholder');
-        if (img) {
-          img.src = item.fotoBase64;
-          img.style.display = 'block';
-        }
-        if (placeholder) placeholder.style.display = 'none';
-      }
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
-function removerItem(id) {
-  itens = itens.filter(i => i.id != id);
-  const itemDiv = document.querySelector(`.item[data-id="${id}"]`);
-  if (itemDiv) itemDiv.remove();
-  recalcular();
-}
-
-function atualizarItemDoDOM(itemId) {
-  const itemDiv = document.querySelector(`.item[data-id="${itemId}"]`);
-  if (!itemDiv) return;
-  const item = itens.find(i => i.id == itemId);
-  if (!item) return;
-
-  item.nome = itemDiv.querySelector('.item-nome')?.value || '';
-  item.descricao = itemDiv.querySelector('.item-descricao')?.value || '';
-  item.preco = parseFloat(itemDiv.querySelector('.item-preco')?.value) || 0;
-  item.desconto = parseFloat(itemDiv.querySelector('.item-desconto')?.value) || 0;
-}
-
-function recalcular() {
-  let subtotal = 0, totalDescontos = 0;
-  itens.forEach(item => {
-    subtotal += item.preco || 0;
-    totalDescontos += item.desconto || 0;
-  });
-  const total = subtotal - totalDescontos;
-  document.getElementById('subtotal').textContent = `R$ ${subtotal.toFixed(2)}`;
-  document.getElementById('total-descontos').textContent = `R$ ${totalDescontos.toFixed(2)}`;
-  document.getElementById('total-geral').textContent = `R$ ${total.toFixed(2)}`;
-}
-
-// --- Upload ImgBB ---
-async function uploadImagem(arquivo) {
-  const formData = new FormData();
-  formData.append('image', arquivo);
-  const resp = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_KEY}`, {
-    method: 'POST',
-    body: formData
-  });
-  const data = await resp.json();
-  return data.success ? data.data.url : null;
-}
-
-// --- Gerar PDF profissional ---
-async function gerarPDF(dadosCliente, itensPDF) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 15;
-
-  // Cabeçalho
-  if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', 14, y, 30, 15);
-  } else {
-    doc.setFontSize(16);
-    doc.setTextColor(44, 62, 80);
-    doc.text('RV Portal Madeiras', 14, y + 5);
-  }
-  doc.setFontSize(12);
-  doc.setTextColor(100);
-  doc.text('Orçamento de Móveis Planejados', pageWidth - 14, y + 5, { align: 'right' });
-  y += 18;
-
-  // Linha separadora
-  doc.setDrawColor(200);
-  doc.line(14, y, pageWidth - 14, y);
-  y += 6;
-
-  // Dados do cliente
-  doc.setFontSize(10);
-  doc.setTextColor(60);
-  doc.text(`Cliente: ${dadosCliente.nome}`, 14, y);
-  y += 5;
-  if (dadosCliente.telefone) {
-    doc.text(`Telefone: ${dadosCliente.telefone}`, 14, y);
-    y += 5;
-  }
-  if (dadosCliente.email) {
-    doc.text(`E-mail: ${dadosCliente.email}`, 14, y);
-    y += 5;
-  }
-  doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 14, y);
-  y += 8;
-
-  // Tabela de itens
-  doc.setFontSize(9);
-  doc.setTextColor(80);
-  // Cabeçalho da tabela
-  const colunas = { foto: 14, nome: 35, descricao: 80, preco: 110, desconto: 130, total: 150 };
-  const linhaY = y;
-  doc.setFillColor(240, 240, 240);
-  doc.rect(14, y, pageWidth - 28, 6, 'F');
-  doc.text('Foto', colunas.foto, y + 4);
-  doc.text('Item', colunas.nome, y + 4);
-  doc.text('Descrição', colunas.descricao, y + 4);
-  doc.text('Preço', colunas.preco, y + 4);
-  doc.text('Desc.', colunas.desconto, y + 4);
-  doc.text('Total', colunas.total, y + 4);
-  y += 8;
-
-  for (let i = 0; i < itensPDF.length; i++) {
-    const item = itensPDF[i];
-    const preco = parseFloat(item.preco) || 0;
-    const desconto = parseFloat(item.desconto) || 0;
-    const totalItem = preco - desconto;
-
-    // Verifica espaço na página
-    if (y > 260) {
-      doc.addPage();
-      y = 20;
-    }
-
-    // Foto (se existir base64)
-    if (item.fotoBase64) {
-      try {
-        doc.addImage(item.fotoBase64, 'JPEG', 14, y - 4, 12, 12);
-      } catch (e) { /* ignora */ }
-    }
-
-    doc.text(item.nome || '', colunas.nome, y);
-    doc.text(item.descricao || '', colunas.descricao, y);
-    doc.text(`R$ ${preco.toFixed(2)}`, colunas.preco, y);
-    doc.text(`R$ ${desconto.toFixed(2)}`, colunas.desconto, y);
-    doc.text(`R$ ${totalItem.toFixed(2)}`, colunas.total, y);
-    y += 8;
-  }
-
-  // Total geral
-  y += 4;
-  doc.setDrawColor(150);
-  doc.line(14, y, pageWidth - 14, y);
-  y += 6;
-  const totalGeral = itensPDF.reduce((s, i) => s + (parseFloat(i.preco)||0) - (parseFloat(i.desconto)||0), 0);
-  doc.setFontSize(12);
-  doc.setTextColor(13, 110, 253);
-  doc.text(`Total Geral: R$ ${totalGeral.toFixed(2)}`, pageWidth - 14, y, { align: 'right' });
-
-  // Observações
-  if (dadosCliente.observacoes) {
-    y += 12;
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text('Observações:', 14, y);
-    y += 5;
-    doc.text(dadosCliente.observacoes, 14, y, { maxWidth: pageWidth - 28 });
-  }
-
-  return doc;
-}
-
-// --- Evento Gerar PDF e Salvar ---
-btnGerarPdf.addEventListener('click', async () => {
-  const nome = document.getElementById('nome').value.trim();
-  if (!nome) { alert('Preencha o nome do cliente.'); return; }
-  if (itens.length === 0 || itens.every(i => !i.nome || i.preco <= 0)) {
-    alert('Adicione ao menos um item com nome e preço.');
-    return;
-  }
-
-  btnGerarPdf.disabled = true;
-  btnGerarPdf.textContent = 'Salvando e gerando PDF...';
-
-  // Upload das imagens para ImgBB (em paralelo)
-  const uploadPromises = itens.map(async (item) => {
-    if (item.fotoFile && !item.fotoUrl) {
-      const url = await uploadImagem(item.fotoFile);
-      item.fotoUrl = url || '';
-    }
-    return item;
-  });
-  const itensProcessados = await Promise.all(uploadPromises);
-
-  // Insere orçamento no Supabase
-  const dadosCliente = {
-    cliente_nome: nome,
-    cliente_telefone: document.getElementById('telefone').value,
-    cliente_email: document.getElementById('email').value,
-    observacoes: document.getElementById('obs').value
+  const opt = {
+    margin: 10,
+    filename: `orcamento_${clienteNome.replace(/\s+/g, '_')}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
-  const { data: orcamento, error: errOrc } = await supabaseClient
-    .from('mdf_orcamentos')
-    .insert(dadosCliente)
-    .select()
-    .single();
+  const area = document.getElementById('print-area');
+  area.innerHTML = html;
+  await html2pdf().set(opt).from(html).save();
+};
 
-  if (errOrc) {
-    alert('Erro ao salvar orçamento: ' + errOrc.message);
-    btnGerarPdf.disabled = false;
-    btnGerarPdf.textContent = 'Gerar Orçamento e PDF';
-    return;
-  }
+window.baixarPDF = async (id) => {
+  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select().eq('id', id).single();
+  if (!orc) return;
+  const { data: itensData } = await supabaseClient.from('mdf_itens').select().eq('orcamento_id', id);
+  const itens = itensData || [];
 
-  // Insere itens
-  const itensParaInserir = itensProcessados.map(item => ({
-    orcamento_id: orcamento.id,
-    nome: item.nome,
-    descricao: item.descricao,
-    preco: item.preco,
-    desconto: item.desconto,
-    foto_url: item.fotoUrl || ''
-  }));
+  const rowsHtml = itens.map((item, idx) => `
+    <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
+      <td style="padding: 8px;">${item.foto_url ? `<img src="${item.foto_url}" style="width:40px; height:40px; border-radius:4px; vertical-align:middle;"> ` : ''}${item.nome}</td>
+      <td style="padding: 8px;">${item.descricao || ''}</td>
+      <td style="padding: 8px; text-align: right;">R$ ${parseFloat(item.preco).toFixed(2)}</td>
+      <td style="padding: 8px; text-align: right;">R$ ${parseFloat(item.desconto || 0).toFixed(2)}</td>
+      <td style="padding: 8px; text-align: right; font-weight: bold;">R$ ${(parseFloat(item.preco) - parseFloat(item.desconto || 0)).toFixed(2)}</td>
+    </tr>
+  `).join('');
 
-  const { error: errItens } = await supabaseClient
-    .from('mdf_itens')
-    .insert(itensParaInserir);
-
-  if (errItens) {
-    alert('Orçamento salvo, mas erro ao salvar itens: ' + errItens.message);
-  }
-
-  // Gera PDF (com as base64 ainda disponíveis)
-  const dadosParaPDF = {
-    nome,
-    telefone: document.getElementById('telefone').value,
-    email: document.getElementById('email').value,
-    observacoes: document.getElementById('obs').value
-  };
-
-  const doc = await gerarPDF(dadosParaPDF, itensProcessados);
-  doc.save(`orcamento_${nome.replace(/\s+/g, '_')}.pdf`);
-
-  btnGerarPdf.disabled = false;
-  btnGerarPdf.textContent = 'Gerar Orçamento e PDF';
-  fecharModal();
-  carregarOrcamentos(); // atualiza lista
-});
-
-// --- Carregar lista de orçamentos ---
-async function carregarOrcamentos() {
-  const { data, error } = await supabaseClient
-    .from('mdf_orcamentos')
-    .select('*, mdf_itens(*)')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    console.error('Erro ao carregar orçamentos:', error);
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    listaOrcamentos.innerHTML = `<div class="empty-state"><p>Nenhum orçamento encontrado.</p><p>Crie o primeiro clicando no botão acima.</p></div>`;
-    return;
-  }
-
-  listaOrcamentos.innerHTML = data.map(orc => {
-    const itens = orc.mdf_itens || [];
-    const total = itens.reduce((s, i) => s + parseFloat(i.preco) - parseFloat(i.desconto), 0);
-    const dataFormatada = new Date(orc.created_at).toLocaleDateString('pt-BR');
-    const statusClass = orc.status || 'pendente';
-
-    return `
-      <div class="orcamento-card" data-id="${orc.id}">
-        <div class="card-header">
-          <h3>${orc.cliente_nome}</h3>
-          <span class="status ${statusClass}">${orc.status}</span>
-        </div>
-        <div class="card-body">
-          <p><strong>Data:</strong> ${dataFormatada}</p>
-          <p><strong>Itens:</strong> ${itens.length}</p>
-          <p><strong>Total:</strong> R$ ${total.toFixed(2)}</p>
-        </div>
-        <div class="card-footer">
-          <button class="btn btn-sm btn-outline btn-export-pdf" data-id="${orc.id}">Exportar PDF</button>
-        </div>
+  const total = itens.reduce((s, i) => s + parseFloat(i.preco) - parseFloat(i.desconto || 0), 0);
+  const html = `
+    <div style="font-family: Helvetica; padding: 20px; max-width: 800px; margin: auto; background: white;">
+      <div style="text-align: center;">
+        <img src="logo.png" style="height: 60px;" onerror="this.style.display='none'">
+        <h2 style="color: #b8a94e;">RV PORTAL MADEIRAS</h2>
+        <p style="font-size: 14px;">CNPJ: 30.942.123/0001-02 | Rua Mineiros, 532 - Jataí/GO</p>
+        <h3>ORÇAMENTO #${orc.id}</h3>
       </div>
-    `;
-  }).join('');
+      <p><strong>Cliente:</strong> ${orc.cliente_nome}</p>
+      <p><strong>Data:</strong> ${new Date(orc.created_at).toLocaleDateString('pt-BR')}</p>
+      ${orc.observacoes ? `<p><strong>Obs:</strong> ${orc.observacoes}</p>` : ''}
+      <table style="width:100%; border-collapse: collapse; margin-top:15px;">
+        <thead><tr style="background:#1e293b; color:white;"><th>Item</th><th>Desc.</th><th>Preço</th><th>Desc.</th><th>Total</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <div style="text-align:right; margin-top:15px; font-size:18px; font-weight:bold;">Total: R$ ${total.toFixed(2)}</div>
+    </div>
+  `;
 
-  // Adiciona eventos aos botões de exportar PDF
-  document.querySelectorAll('.btn-export-pdf').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.dataset.id;
-      await exportarPDFExistente(id);
-    });
-  });
-}
-
-// --- Exportar PDF de um orçamento já salvo ---
-async function exportarPDFExistente(orcamentoId) {
-  // Busca o orçamento com itens
-  const { data, error } = await supabaseClient
-    .from('mdf_orcamentos')
-    .select('*, mdf_itens(*)')
-    .eq('id', orcamentoId)
-    .single();
-
-  if (error || !data) {
-    alert('Orçamento não encontrado.');
-    return;
-  }
-
-  const orc = data;
-  const itens = orc.mdf_itens || [];
-
-  // Precisamos das fotos em base64. Vamos carregá-las a partir das URLs.
-  const itensComFoto = await Promise.all(itens.map(async (item) => {
-    let fotoBase64 = '';
-    if (item.foto_url) {
-      try {
-        const resp = await fetch(item.foto_url);
-        const blob = await resp.blob();
-        fotoBase64 = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(blob);
-        });
-      } catch (e) {
-        console.warn('Não foi possível carregar a imagem:', item.foto_url);
-      }
-    }
-    return {
-      nome: item.nome,
-      descricao: item.descricao,
-      preco: item.preco,
-      desconto: item.desconto,
-      fotoBase64: fotoBase64
-    };
-  }));
-
-  const dadosCliente = {
-    nome: orc.cliente_nome,
-    telefone: orc.cliente_telefone,
-    email: orc.cliente_email,
-    observacoes: orc.observacoes
+  const opt = {
+    margin: 10,
+    filename: `orcamento_${orc.cliente_nome}_#${id}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
+  document.getElementById('print-area').innerHTML = html;
+  await html2pdf().set(opt).from(html).save();
+};
 
-  const doc = await gerarPDF(dadosCliente, itensComFoto);
-  doc.save(`orcamento_${orc.cliente_nome.replace(/\s+/g, '_')}.pdf`);
-}
-
-// Carrega lista ao iniciar
-carregarOrcamentos();
+window.imprimirOrcamento = (id) => {
+  window.baixarPDF(id); // ou abrir em nova janela com window.open? por enquanto baixa
+};
