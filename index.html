@@ -3,89 +3,296 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RV Portal Madeiras - Orçamentos</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <title>RV Portal Madeiras</title>
+  
+  <!-- Tailwind e Lucide -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Supabase e html2pdf -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  
+  <style>
+    /* Transições suaves e customizações */
+    .modal-overlay {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .modal-container {
+      transform: translateY(20px);
+      transition: transform 0.3s ease;
+    }
+    .modal-overlay.active .modal-container {
+      transform: translateY(0);
+    }
+    .btn-primary {
+      background-color: #b8a94e;
+      color: #1e293b;
+      transition: all 0.2s;
+    }
+    .btn-primary:hover {
+      background-color: #9b8a3b;
+      color: white;
+    }
+    .btn-outline {
+      border: 1.5px solid #b8a94e;
+      color: #b8a94e;
+      background: transparent;
+      transition: all 0.2s;
+    }
+    .btn-outline:hover {
+      background: #f7f3d0;
+    }
+    .status-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+    .status-aberto { background: #fef9c3; color: #854d0e; }
+    .status-negociacao { background: #e0e7ff; color: #3730a3; }
+    .status-aprovado { background: #d1fae5; color: #065f46; }
+    .status-perdido { background: #fee2e2; color: #991b1b; }
+  </style>
 </head>
-<body>
-  <div class="container">
-    <header class="app-header">
-      <div class="logo-area">
-        <img src="logo.png" alt="RV Portal Madeiras" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-        <span class="logo-text-fallback" style="display:none;">RV Portal Madeiras</span>
-      </div>
-      <h1>Orçamentos</h1>
-      <button id="btn-novo" class="btn btn-primary">+ Novo Orçamento</button>
-    </header>
+<body class="bg-slate-50 font-sans antialiased">
 
-    <main id="lista-orcamentos" class="orcamentos-grid">
-      <!-- Cards serão inseridos aqui via JS -->
-      <div class="empty-state">
-        <p>Nenhum orçamento encontrado.</p>
-        <p>Crie o primeiro clicando no botão acima.</p>
+<div class="flex h-screen overflow-hidden">
+  
+  <!-- SIDEBAR -->
+  <aside class="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20 hidden md:flex">
+    <div class="p-6 flex flex-col items-center border-b border-slate-700 bg-slate-900">
+      <div class="w-20 h-20 rounded-full border-4 border-[#b8a94e] mb-3 shadow-lg bg-white overflow-hidden p-1">
+        <img src="logo.png" alt="Logo" class="w-full h-full object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="hidden w-full h-full items-center justify-center text-[#b8a94e] font-bold text-xl">RV</div>
       </div>
-    </main>
-  </div>
+      <h1 class="text-lg font-bold tracking-wider text-[#DBCC79]">RV PORTAL</h1>
+    </div>
+    <nav class="flex-1 mt-4 px-3 space-y-1 overflow-y-auto">
+      <button onclick="navigate('orcamentos')" id="nav-orcamentos" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all bg-[#b8a94e] text-white shadow-lg">
+        <i data-lucide="folder-open"></i> <span class="font-medium text-sm">Orçamentos</span>
+      </button>
+      <button onclick="navigate('projetos')" id="nav-projetos" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="box"></i> <span class="font-medium text-sm">Projetos</span>
+      </button>
+      <button onclick="navigate('vendas')" id="nav-vendas" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="shopping-cart"></i> <span class="font-medium text-sm">Vendas</span>
+      </button>
+      <button onclick="navigate('clientes')" id="nav-clientes" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="users"></i> <span class="font-medium text-sm">Clientes</span>
+      </button>
+      <button onclick="navigate('produtos')" id="nav-produtos" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="package"></i> <span class="font-medium text-sm">Produtos</span>
+      </button>
+      <button onclick="navigate('relatorios')" id="nav-relatorios" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="bar-chart-3"></i> <span class="font-medium text-sm">Relatórios</span>
+      </button>
+      <button onclick="navigate('financeiro')" id="nav-financeiro" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="dollar-sign"></i> <span class="font-medium text-sm">Financeiro</span>
+      </button>
+      <button onclick="navigate('usuarios')" id="nav-usuarios" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="shield"></i> <span class="font-medium text-sm">Usuários</span>
+      </button>
+    </nav>
+    <div class="p-3 border-t border-slate-800">
+      <button onclick="fazerLogout()" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-900/30 transition-all">
+        <i data-lucide="log-out"></i> <span class="font-medium text-sm">Sair</span>
+      </button>
+    </div>
+  </aside>
 
-  <!-- Modal para Novo Orçamento -->
-  <div id="modal-novo" class="modal-overlay">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h2>Novo Orçamento</h2>
-        <button class="btn-close" id="btn-fechar-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <!-- Dados do Cliente -->
-        <div class="modal-section">
-          <h3>Cliente</h3>
-          <div class="grid-2">
-            <div class="campo">
-              <label for="nome">Nome *</label>
-              <input type="text" id="nome" placeholder="Nome completo" required>
-            </div>
-            <div class="campo">
-              <label for="telefone">Telefone</label>
-              <input type="tel" id="telefone" placeholder="(00) 00000-0000">
-            </div>
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100">
+    
+    <!-- ABA ORÇAMENTOS -->
+    <div id="view-orcamentos" class="active-section">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <i data-lucide="folder-open" class="text-[#b8a94e]"></i> Orçamentos
+        </h2>
+        <div class="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+          <div class="relative w-full md:w-64">
+            <i data-lucide="search" class="absolute left-2 top-2.5 text-slate-400 w-4 h-4"></i>
+            <input type="text" id="search-quotes" placeholder="Buscar cliente..." class="w-full pl-8 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#DBCC79] outline-none shadow-sm" onkeyup="window.renderOrcamentos()">
           </div>
-          <div class="campo">
-            <label for="email">E-mail</label>
-            <input type="email" id="email" placeholder="cliente@email.com">
-          </div>
-          <div class="campo">
-            <label for="obs">Observações</label>
-            <textarea id="obs" rows="2" placeholder="Detalhes do projeto..."></textarea>
-          </div>
+          <select id="status-filter" class="w-full md:w-auto p-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#DBCC79] outline-none shadow-sm font-medium text-slate-600" onchange="window.renderOrcamentos()">
+            <option value="">Todos os Status</option>
+            <option value="ABERTO">Abertos</option>
+            <option value="EM NEGOCIAÇÃO">Em Negociação</option>
+            <option value="APROVADO">Aprovados</option>
+            <option value="PERDIDO">Perdidos</option>
+          </select>
+          <button onclick="window.abrirNovoOrcamento()" class="btn-primary px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 whitespace-nowrap">
+            <i data-lucide="plus"></i> Novo Orçamento
+          </button>
         </div>
-
-        <!-- Itens -->
-        <div class="modal-section">
-          <div class="cabecalho-itens">
-            <h3>Itens do Projeto</h3>
-            <button id="btn-add-item" class="btn btn-outline btn-sm">+ Adicionar</button>
-          </div>
-          <div id="lista-itens"></div>
-        </div>
-
-        <!-- Resumo financeiro -->
-        <div class="modal-section resumo">
-          <div class="total-linha"><span>Subtotal</span> <span id="subtotal">R$ 0,00</span></div>
-          <div class="total-linha"><span>Descontos</span> <span id="total-descontos">R$ 0,00</span></div>
-          <div class="total-linha total-final"><span>Total</span> <span id="total-geral">R$ 0,00</span></div>
-        </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="btn-cancelar">Cancelar</button>
-        <button class="btn btn-primary" id="btn-gerar-pdf">Gerar Orçamento e PDF</button>
+
+      <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-slate-50 text-slate-700">
+              <tr>
+                <th class="p-4 w-32">Orçamento</th>
+                <th class="p-4">Cliente / Info</th>
+                <th class="p-4">Valor</th>
+                <th class="p-4 text-center">Status</th>
+                <th class="p-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="lista-orcamentos" class="divide-y">
+              <tr><td colspan="5" class="p-8 text-center text-slate-400">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  </div>
 
-  <script src="config.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="app.js"></script>
+    <!-- DEMAIS ABAS (PLACEHOLDERS) -->
+    <div id="view-projetos" class="hidden-section p-8 text-center text-slate-500">Em breve - Projetos</div>
+    <div id="view-vendas" class="hidden-section p-8 text-center text-slate-500">Em breve - Vendas</div>
+    <div id="view-clientes" class="hidden-section p-8 text-center text-slate-500">Em breve - Clientes</div>
+    <div id="view-produtos" class="hidden-section p-8 text-center text-slate-500">Em breve - Produtos</div>
+    <div id="view-relatorios" class="hidden-section p-8 text-center text-slate-500">Em breve - Relatórios</div>
+    <div id="view-financeiro" class="hidden-section p-8 text-center text-slate-500">Em breve - Financeiro</div>
+    <div id="view-usuarios" class="hidden-section p-8 text-center text-slate-500">Em breve - Usuários</div>
+    
+  </main>
+</div>
+
+<!-- MODAL DE ORÇAMENTO -->
+<div id="modal-orcamento" class="modal-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+  <div class="modal-container bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+    <div class="p-5 border-b flex justify-between items-center bg-amber-50 rounded-t-2xl">
+      <h3 class="font-bold text-slate-800 text-lg flex items-center gap-2">
+        <i data-lucide="file-text" class="text-[#b8a94e]"></i>
+        <span id="modal-titulo">Novo Orçamento</span>
+      </h3>
+      <button onclick="window.fecharModal()" class="text-slate-400 hover:text-red-500"><i data-lucide="x"></i></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <input type="hidden" id="orcamento-id">
+      
+      <!-- Cliente e Status -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-1">Cliente *</label>
+          <select id="cliente" class="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#DBCC79] outline-none">
+            <option value="">Selecione um cliente...</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-slate-700 mb-1">Status</label>
+          <select id="status" class="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#DBCC79] outline-none">
+            <option value="ABERTO">Aberto</option>
+            <option value="EM NEGOCIAÇÃO">Em Negociação</option>
+            <option value="APROVADO">Aprovado</option>
+            <option value="PERDIDO">Perdido</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Observações -->
+      <div>
+        <label class="block text-sm font-bold text-slate-700 mb-1">Observações</label>
+        <textarea id="observacoes" rows="2" placeholder="Detalhes do projeto..." class="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#DBCC79] outline-none"></textarea>
+      </div>
+
+      <!-- Itens -->
+      <div class="border-t pt-4">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-bold text-slate-700">Itens do Projeto</h4>
+          <button onclick="window.adicionarItem()" class="btn-outline px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+            <i data-lucide="plus" class="w-4 h-4"></i> Adicionar Item
+          </button>
+        </div>
+        <div id="container-itens" class="space-y-3"></div>
+      </div>
+
+      <!-- Resumo financeiro -->
+      <div class="bg-slate-50 p-4 rounded-xl border">
+        <div class="flex justify-between text-sm mb-1"><span>Subtotal</span> <span id="subtotal">R$ 0,00</span></div>
+        <div class="flex justify-between text-sm mb-1">
+          <span>Desconto</span>
+          <div class="flex items-center gap-1">
+            <select id="tipo-desconto" class="text-xs border rounded p-0.5 bg-white" onchange="window.atualizarTotais()">
+              <option value="$">R$</option>
+              <option value="%">%</option>
+            </select>
+            <input type="number" id="valor-desconto" value="0" step="0.01" class="w-20 p-1 border rounded text-sm text-right" onchange="window.atualizarTotais()">
+          </div>
+        </div>
+        <div class="flex justify-between font-bold text-lg border-t pt-2 mt-1">
+          <span>Total</span> <span id="total-geral" class="text-[#b8a94e]">R$ 0,00</span>
+        </div>
+      </div>
+    </div>
+    <div class="p-5 border-t bg-slate-50 rounded-b-2xl flex justify-end gap-3">
+      <button onclick="window.fecharModal()" class="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">Cancelar</button>
+      <button onclick="window.salvarOrcamento()" class="btn-primary px-6 py-2 rounded-lg font-bold shadow flex items-center gap-2">
+        <i data-lucide="save"></i> Salvar Orçamento
+      </button>
+      <button onclick="window.gerarPDF()" class="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 transition flex items-center gap-2">
+        <i data-lucide="download"></i> Baixar PDF
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Área de impressão oculta -->
+<div id="print-area" class="hidden"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+  // Navegação entre abas
+  function navigate(viewId) {
+    document.querySelectorAll('[id^="view-"]').forEach(el => {
+      el.classList.add('hidden-section');
+      el.classList.remove('active-section');
+    });
+    const target = document.getElementById('view-' + viewId);
+    if (target) {
+      target.classList.remove('hidden-section');
+      target.classList.add('active-section');
+    }
+    // Atualiza botão ativo na sidebar
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('bg-[#b8a94e]', 'text-white', 'shadow-lg'));
+    const activeBtn = document.getElementById('nav-' + viewId);
+    if (activeBtn) activeBtn.classList.add('bg-[#b8a94e]', 'text-white', 'shadow-lg');
+    // Recarrega ícones Lucide
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    // Se for a aba orçamentos, recarrega a lista
+    if (viewId === 'orcamentos' && typeof window.renderOrcamentos === 'function') {
+      window.renderOrcamentos();
+    }
+  }
+  
+  function fazerLogout() {
+    if (confirm('Deseja sair?')) {
+      localStorage.removeItem('rv_user');
+      window.location.replace('index.html');
+    }
+  }
+
+  // Esconde seções inativas
+  window.onload = function() {
+    // Ativa orçamentos por padrão
+    navigate('orcamentos');
+  };
+</script>
+
+<style>
+  .hidden-section { display: none !important; }
+  .active-section { display: block !important; }
+</style>
+
 </body>
 </html>
