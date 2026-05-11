@@ -148,7 +148,7 @@ window.fecharModal = () => {
 
 async function carregarClientesSelect() {
   const select = document.getElementById('cliente');
-  const { data } = await supabaseClient.from('clientes').select('*');
+  const { data } = await supabaseClient.from('mdf_clientes').select('*');  // corrigido
   select.innerHTML = '<option value="">Selecione um cliente...</option>' +
     (data || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
 }
