@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RV Portal Madeiras - Orçamentos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <div class="logo-area">
+        <img src="logo.png" alt="RV Portal Madeiras" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <span class="logo-text-fallback" style="display:none;">RV Portal Madeiras</span>
+      </div>
+      <h1>Orçamentos</h1>
+      <button id="btn-novo" class="btn btn-primary">+ Novo Orçamento</button>
+    </header>
+
+    <main id="lista-orcamentos" class="orcamentos-grid">
+      <!-- Cards serão inseridos aqui via JS -->
+      <div class="empty-state">
+        <p>Nenhum orçamento encontrado.</p>
+        <p>Crie o primeiro clicando no botão acima.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal para Novo Orçamento -->
+  <div id="modal-novo" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2>Novo Orçamento</h2>
+        <button class="btn-close" id="btn-fechar-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Dados do Cliente -->
+        <div class="modal-section">
+          <h3>Cliente</h3>
+          <div class="grid-2">
+            <div class="campo">
+              <label for="nome">Nome *</label>
+              <input type="text" id="nome" placeholder="Nome completo" required>
+            </div>
+            <div class="campo">
+              <label for="telefone">Telefone</label>
+              <input type="tel" id="telefone" placeholder="(00) 00000-0000">
+            </div>
+          </div>
+          <div class="campo">
+            <label for="email">E-mail</label>
+            <input type="email" id="email" placeholder="cliente@email.com">
+          </div>
+          <div class="campo">
+            <label for="obs">Observações</label>
+            <textarea id="obs" rows="2" placeholder="Detalhes do projeto..."></textarea>
+          </div>
+        </div>
+
+        <!-- Itens -->
+        <div class="modal-section">
+          <div class="cabecalho-itens">
+            <h3>Itens do Projeto</h3>
+            <button id="btn-add-item" class="btn btn-outline btn-sm">+ Adicionar</button>
+          </div>
+          <div id="lista-itens"></div>
+        </div>
+
+        <!-- Resumo financeiro -->
+        <div class="modal-section resumo">
+          <div class="total-linha"><span>Subtotal</span> <span id="subtotal">R$ 0,00</span></div>
+          <div class="total-linha"><span>Descontos</span> <span id="total-descontos">R$ 0,00</span></div>
+          <div class="total-linha total-final"><span>Total</span> <span id="total-geral">R$ 0,00</span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btn-gerar-pdf">Gerar Orçamento e PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
