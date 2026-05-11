@@ -274,8 +274,11 @@
     if (typeof lucide !== 'undefined') lucide.createIcons();
     // Se for a aba orçamentos, recarrega a lista
     if (viewId === 'orcamentos' && typeof window.renderOrcamentos === 'function') {
-      window.renderOrcamentos();
+      window.renderOrcamentos();      
     }
+    if (viewId === 'projetos') {
+      window.iniciarProjetos(); // Nova linha
+}
   }
   
   function fazerLogout() {
