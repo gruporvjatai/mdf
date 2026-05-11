@@ -1,456 +1,237 @@
-// Instância Supabase (sem conflito)
-const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+// projetos.js (módulo ES)
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// Estado global
-let itens = [];
-let orcamentoAtualId = null;
-
-// ==================== FUNÇÕES DE LISTAGEM ====================
-window.renderOrcamentos = async () => {
-  const lista = document.getElementById('lista-orcamentos');
-  lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Carregando...</td></tr>';
-
-  const search = document.getElementById('search-quotes')?.value.toLowerCase() || '';
-  const statusFiltro = document.getElementById('status-filter')?.value || '';
-
-  let query = supabaseClient.from('mdf_orcamentos').select('*').order('created_at', { ascending: false });
-  if (statusFiltro) query = query.eq('status', statusFiltro);
-
-  const { data: orcamentos, error } = await query;
-  if (error) {
-    console.error(error);
-    lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-400">Erro ao carregar.</td></tr>';
-    return;
+class ConfiguradorArmario {
+  constructor(container) {
+    this.container = container;
+    this.params = {
+      largura: 200,
+      altura: 220,
+      profundidade: 60,
+      numPrateleiras: 3,
+      espessura: 1.8,
+      corCorpo: '#A67B5B',
+      corPorta: '#8B5A2B',
+    };
+    this.init();
   }
 
-  // Filtro local por nome
-  const filtrados = orcamentos.filter(o => !search || (o.cliente_nome && o.cliente_nome.toLowerCase().includes(search)));
-
-  if (!filtrados.length) {
-    lista.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Nenhum orçamento encontrado.</td></tr>';
-    return;
+  async init() {
+    this.criarInterface();
+    this.criarCena();
+    this.animar();
   }
 
-  // Busca totais e contagem de itens para cada orçamento
-  const dados = await Promise.all(filtrados.map(async (orc) => {
-    const { data: itensData } = await supabaseClient.from('mdf_itens').select('preco, desconto').eq('orcamento_id', orc.id);
-    const total = itensData ? itensData.reduce((s, i) => s + parseFloat(i.preco) - parseFloat(i.desconto || 0), 0) : 0;
-    return { ...orc, total, itensCount: itensData?.length || 0 };
-  }));
-
-  lista.innerHTML = dados.map(orc => {
-    const statusClass = {
-      'ABERTO': 'status-aberto',
-      'EM NEGOCIAÇÃO': 'status-negociacao',
-      'APROVADO': 'status-aprovado',
-      'PERDIDO': 'status-perdido'
-    }[orc.status] || 'status-aberto';
-
-    return `
-      <tr class="hover:bg-slate-50 transition">
-        <td class="p-4">
-          <div class="font-black text-slate-700">#${orc.id}</div>
-          <div class="text-xs text-slate-400">${new Date(orc.created_at).toLocaleDateString('pt-BR')}</div>
-        </td>
-        <td class="p-4">
-          <div class="font-bold text-slate-800">${orc.cliente_nome || 'Consumidor Final'}</div>
-          <div class="text-xs text-slate-500">${orc.itensCount} itens</div>
-        </td>
-        <td class="p-4 font-bold text-slate-800">R$ ${orc.total.toFixed(2)}</td>
-        <td class="p-4 text-center">
-          <span class="status-badge ${statusClass}">${orc.status}</span>
-        </td>
-        <td class="p-4">
-          <div class="flex items-center justify-center gap-2">
-            <button onclick="window.editarOrcamento(${orc.id})" class="p-2 border border-[#b8a94e] bg-white text-[#b8a94e] hover:bg-amber-50 rounded-lg shadow-sm" title="Editar">
-              <i data-lucide="edit-3" class="w-4 h-4"></i>
-            </button>
-            <button onclick="window.duplicarOrcamento(${orc.id})" class="p-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg shadow-sm" title="Duplicar">
-              <i data-lucide="copy" class="w-4 h-4"></i>
-            </button>
-            <button onclick="window.baixarPDF(${orc.id})" class="p-2 border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 rounded-lg shadow-sm" title="Baixar PDF">
-              <i data-lucide="download" class="w-4 h-4"></i>
-            </button>
-            <button onclick="window.imprimirOrcamento(${orc.id})" class="p-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg shadow-sm" title="Imprimir">
-              <i data-lucide="printer" class="w-4 h-4"></i>
-            </button>
-            <button onclick="window.excluirOrcamento(${orc.id})" class="p-2 border border-red-200 bg-white text-red-500 hover:bg-red-50 rounded-lg shadow-sm" title="Excluir">
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
-            </button>
+  criarInterface() {
+    this.container.innerHTML = `
+      <div class="flex flex-col lg:flex-row gap-4 h-full">
+        <div class="lg:w-1/4 bg-white rounded-xl shadow border p-4 space-y-4 overflow-y-auto">
+          <h3 class="text-lg font-bold text-slate-800">Parâmetros</h3>
+          <div>
+            <label class="block text-sm font-medium text-slate-600">Largura (cm)</label>
+            <input type="range" id="inp-largura" min="80" max="400" value="${this.params.largura}" class="w-full">
+            <span id="val-largura" class="text-xs">${this.params.largura} cm</span>
           </div>
-        </td>
-      </tr>
+          <div>
+            <label class="block text-sm font-medium text-slate-600">Altura (cm)</label>
+            <input type="range" id="inp-altura" min="100" max="280" value="${this.params.altura}" class="w-full">
+            <span id="val-altura">${this.params.altura} cm</span>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-600">Profundidade (cm)</label>
+            <input type="range" id="inp-profundidade" min="30" max="70" value="${this.params.profundidade}" class="w-full">
+            <span id="val-profundidade">${this.params.profundidade} cm</span>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-600">Prateleiras</label>
+            <input type="range" id="inp-prateleiras" min="0" max="8" value="${this.params.numPrateleiras}" class="w-full">
+            <span id="val-prateleiras">${this.params.numPrateleiras}</span>
+          </div>
+          <button id="btn-exportar-medidas" class="w-full btn-primary px-4 py-2 rounded-lg font-bold shadow">
+            📐 Exportar Peças
+          </button>
+          <textarea id="output-medidas" rows="6" class="w-full p-2 border rounded text-xs bg-slate-50" readonly></textarea>
+        </div>
+        <div class="flex-1 relative rounded-xl overflow-hidden border shadow" id="canvas-container"></div>
+      </div>
     `;
-  }).join('');
 
-  lucide.createIcons();
-};
-
-// ==================== MODAL ====================
-window.abrirNovoOrcamento = async () => {
-  orcamentoAtualId = null;
-  document.getElementById('modal-titulo').innerText = 'Novo Orçamento';
-  document.getElementById('orcamento-id').value = '';
-  document.getElementById('cliente').value = '';
-  document.getElementById('status').value = 'ABERTO';
-  document.getElementById('observacoes').value = '';
-  document.getElementById('tipo-desconto').value = '$';
-  document.getElementById('valor-desconto').value = '0';
-  itens = [];
-  renderizarItens();
-  atualizarTotais();
-  await carregarClientesSelect();
-  document.getElementById('modal-orcamento').classList.add('active');
-  lucide.createIcons();
-};
-
-window.editarOrcamento = async (id) => {
-  orcamentoAtualId = id;
-  document.getElementById('modal-titulo').innerText = `Editar Orçamento #${id}`;
-
-  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select('*').eq('id', id).single();
-  if (orc) {
-    document.getElementById('status').value = orc.status || 'ABERTO';
-    document.getElementById('observacoes').value = orc.observacoes || '';
-    // Cliente
-    await carregarClientesSelect();
-    if (orc.cliente_nome) {
-      const { data: cliente } = await supabaseClient.from('clientes').select('id').eq('nome', orc.cliente_nome).maybeSingle();
-      document.getElementById('cliente').value = cliente?.id || '';
-    }
+    this.bindEvents();
   }
 
-  const { data: itensData } = await supabaseClient.from('mdf_itens').select('*').eq('orcamento_id', id);
-  itens = itensData ? itensData.map(i => ({
-    id: i.id,
-    nome: i.nome,
-    descricao: i.descricao || '',
-    preco: parseFloat(i.preco),
-    desconto: parseFloat(i.desconto || 0),
-    foto_url: i.foto_url || '',
-    foto_file: null,
-    removido: false
-  })) : [];
+  bindEvents() {
+    const atualizar = () => {
+      this.params.largura = parseFloat(document.getElementById('inp-largura').value);
+      this.params.altura = parseFloat(document.getElementById('inp-altura').value);
+      this.params.profundidade = parseFloat(document.getElementById('inp-profundidade').value);
+      this.params.numPrateleiras = parseInt(document.getElementById('inp-prateleiras').value);
 
-  const totalDesconto = itens.reduce((s, i) => s + i.desconto, 0);
-  document.getElementById('tipo-desconto').value = '$';
-  document.getElementById('valor-desconto').value = totalDesconto.toFixed(2);
+      document.getElementById('val-largura').innerText = `${this.params.largura} cm`;
+      document.getElementById('val-altura').innerText = `${this.params.altura} cm`;
+      document.getElementById('val-profundidade').innerText = `${this.params.profundidade} cm`;
+      document.getElementById('val-prateleiras').innerText = this.params.numPrateleiras;
 
-  renderizarItens();
-  atualizarTotais();
-  document.getElementById('modal-orcamento').classList.add('active');
-  lucide.createIcons();
-};
+      this.reconstruirModelo();
+    };
 
-window.fecharModal = () => {
-  document.getElementById('modal-orcamento').classList.remove('active');
-};
-
-async function carregarClientesSelect() {
-  const select = document.getElementById('cliente');
-  const { data } = await supabaseClient.from('mdf_clientes').select('*');  // corrigido
-  select.innerHTML = '<option value="">Selecione um cliente...</option>' +
-    (data || []).map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
-}
-
-// ==================== ITENS ====================
-window.adicionarItem = (dados = {}) => {
-  itens.push({
-    id: null,
-    nome: dados.nome || '',
-    descricao: dados.descricao || '',
-    preco: dados.preco || 0,
-    desconto: dados.desconto || 0,
-    foto_url: dados.foto_url || '',
-    foto_file: null,
-    removido: false
-  });
-  renderizarItens();
-  atualizarTotais();
-  lucide.createIcons();
-};
-
-window.removerItem = (index) => {
-  if (itens[index].id) {
-    itens[index].removido = true;
-  } else {
-    itens.splice(index, 1);
-  }
-  renderizarItens();
-  atualizarTotais();
-};
-
-function renderizarItens() {
-  const container = document.getElementById('container-itens');
-  container.innerHTML = itens.filter(i => !i.removido).map((item, idx) => `
-    <div class="flex flex-col md:flex-row gap-3 items-start border border-slate-200 rounded-xl p-3 bg-white">
-      <div class="flex-shrink-0 relative">
-        <img src="${item.foto_url || 'https://via.placeholder.com/80'}" class="w-20 h-20 object-cover rounded-lg border cursor-pointer" onclick="this.nextElementSibling.click()" alt="Foto do item">
-        <input type="file" accept="image/*" class="hidden" onchange="window.uploadImagemItem(this, ${idx})">
-      </div>
-      <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 w-full">
-        <input type="text" placeholder="Nome do móvel" value="${item.nome}" onchange="window.atualizarItem(${idx}, 'nome', this.value)" class="p-2 border rounded text-sm w-full">
-        <input type="text" placeholder="Medidas / descrição" value="${item.descricao}" onchange="window.atualizarItem(${idx}, 'descricao', this.value)" class="p-2 border rounded text-sm w-full">
-        <input type="number" placeholder="Preço R$" value="${item.preco}" onchange="window.atualizarItem(${idx}, 'preco', parseFloat(this.value) || 0)" class="p-2 border rounded text-sm w-full" step="0.01">
-        <input type="number" placeholder="Desconto R$" value="${item.desconto}" onchange="window.atualizarItem(${idx}, 'desconto', parseFloat(this.value) || 0)" class="p-2 border rounded text-sm w-full" step="0.01">
-      </div>
-      <button onclick="window.removerItem(${idx})" class="text-red-400 hover:text-red-600 p-2"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
-    </div>
-  `).join('');
-}
-
-window.atualizarItem = (index, campo, valor) => {
-  itens[index][campo] = valor;
-  atualizarTotais();
-};
-
-window.uploadImagemItem = async (input, index) => {
-  const file = input.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('image', file);
-  try {
-    const resp = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_KEY}`, {
-      method: 'POST',
-      body: formData
+    ['inp-largura','inp-altura','inp-profundidade','inp-prateleiras'].forEach(id => {
+      document.getElementById(id).addEventListener('input', atualizar);
     });
-    const data = await resp.json();
-    if (data.success) {
-      itens[index].foto_url = data.data.url;
-      renderizarItens();
-      lucide.createIcons();
-    } else {
-      alert('Erro ao enviar imagem.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao enviar imagem.');
+
+    document.getElementById('btn-exportar-medidas').addEventListener('click', () => this.exportarPecas());
   }
-};
 
-window.atualizarTotais = () => {
-  const subtotal = itens.filter(i => !i.removido).reduce((s, i) => s + i.preco, 0);
-  const tipo = document.getElementById('tipo-desconto').value;
-  const valor = parseFloat(document.getElementById('valor-desconto').value) || 0;
-  const desconto = tipo === '%' ? subtotal * (valor / 100) : valor;
-  const total = Math.max(0, subtotal - desconto);
-  document.getElementById('subtotal').innerText = `R$ ${subtotal.toFixed(2)}`;
-  document.getElementById('total-geral').innerText = `R$ ${total.toFixed(2)}`;
-};
+  criarCena() {
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color('#f1f5f9');
 
-// ==================== SALVAR / EXCLUIR / DUPLICAR ====================
-window.salvarOrcamento = async () => {
-  const clienteNome = document.getElementById('cliente').selectedOptions[0]?.text || 'Consumidor Final';
-  const status = document.getElementById('status').value;
-  const obs = document.getElementById('observacoes').value.trim();
+    const container = document.getElementById('canvas-container');
+    this.camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 10, 1000);
+    this.camera.position.set(250, 180, 300);
+    this.camera.lookAt(0, 120, 0);
 
-  if (orcamentoAtualId) {
-    // Atualiza
-    const { error: errOrc } = await supabaseClient.from('mdf_orcamentos').update({
-      cliente_nome: clienteNome,
-      status,
-      observacoes: obs
-    }).eq('id', orcamentoAtualId);
-    if (errOrc) return alert('Erro ao atualizar orçamento: ' + errOrc.message);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(this.renderer.domElement);
 
-    // Remove itens marcados
-    for (const item of itens.filter(i => i.removido && i.id)) {
-      await supabaseClient.from('mdf_itens').delete().eq('id', item.id);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    this.scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(100, 200, 150);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 600;
+    this.scene.add(dirLight);
+
+    // Usando OrbitControls importado
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.target.set(0, 120, 0);
+    this.controls.update();
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(500, 500),
+      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.9 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    this.reconstruirModelo();
+  }
+
+  reconstruirModelo() {
+    while(this.scene.children.find(c => c.userData?.tipo === 'armario')) {
+      this.scene.remove(this.scene.children.find(c => c.userData?.tipo === 'armario'));
     }
-    // Atualiza/insere
-    for (const item of itens.filter(i => !i.removido)) {
-      const payload = {
-        orcamento_id: orcamentoAtualId,
-        nome: item.nome,
-        descricao: item.descricao,
-        preco: item.preco,
-        desconto: item.desconto,
-        foto_url: item.foto_url
-      };
-      if (item.id) {
-        await supabaseClient.from('mdf_itens').update(payload).eq('id', item.id);
-      } else {
-        await supabaseClient.from('mdf_itens').insert(payload);
+
+    const { largura, altura, profundidade, numPrateleiras, espessura, corCorpo, corPorta } = this.params;
+    const grupo = new THREE.Group();
+    grupo.userData = { tipo: 'armario' };
+
+    const matCorpo = new THREE.MeshStandardMaterial({ color: corCorpo, roughness: 0.5 });
+    const matPorta = new THREE.MeshStandardMaterial({ color: corPorta, roughness: 0.4 });
+    const d = espessura;
+
+    // Laterais
+    const lateralGeo = new THREE.BoxGeometry(d, altura, profundidade);
+    const lateralEsq = new THREE.Mesh(lateralGeo, matCorpo);
+    lateralEsq.position.set(-largura/2 + d/2, altura/2, 0);
+    lateralEsq.castShadow = true; lateralEsq.receiveShadow = true;
+    grupo.add(lateralEsq);
+    const lateralDir = new THREE.Mesh(lateralGeo, matCorpo);
+    lateralDir.position.set(largura/2 - d/2, altura/2, 0);
+    lateralDir.castShadow = true; lateralDir.receiveShadow = true;
+    grupo.add(lateralDir);
+
+    // Fundo
+    const fundoGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade);
+    const fundo = new THREE.Mesh(fundoGeo, matCorpo);
+    fundo.position.set(0, d/2, 0);
+    fundo.castShadow = true; fundo.receiveShadow = true;
+    grupo.add(fundo);
+
+    // Teto
+    const tetoGeo = new THREE.BoxGeometry(largura, d, profundidade);
+    const teto = new THREE.Mesh(tetoGeo, matCorpo);
+    teto.position.set(0, altura - d/2, 0);
+    teto.castShadow = true; teto.receiveShadow = true;
+    grupo.add(teto);
+
+    // Prateleiras
+    if (numPrateleiras > 0 && altura > 2*d) {
+      const alturaUtil = altura - 2*d;
+      const passo = alturaUtil / (numPrateleiras + 1);
+      const prateleiraGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade - 2*d);
+      for (let i = 1; i <= numPrateleiras; i++) {
+        const prateleira = new THREE.Mesh(prateleiraGeo, matCorpo);
+        prateleira.position.set(0, d + i * passo - d/2, 0);
+        prateleira.castShadow = true; prateleira.receiveShadow = true;
+        grupo.add(prateleira);
       }
     }
-  } else {
-    // Novo
-    const { data: novo, error: errOrc } = await supabaseClient.from('mdf_orcamentos').insert({
-      cliente_nome: clienteNome,
-      status,
-      observacoes: obs
-    }).select().single();
-    if (errOrc) return alert('Erro ao criar orçamento: ' + errOrc.message);
 
-    const itensParaInserir = itens.filter(i => !i.removido).map(i => ({
-      orcamento_id: novo.id,
-      nome: i.nome,
-      descricao: i.descricao,
-      preco: i.preco,
-      desconto: i.desconto,
-      foto_url: i.foto_url
-    }));
-    if (itensParaInserir.length) {
-      await supabaseClient.from('mdf_itens').insert(itensParaInserir);
+    // Portas de correr
+    const larguraPorta = (largura - 2*d) / 2 + d*0.5;
+    const portaGeo = new THREE.BoxGeometry(larguraPorta, altura - 2*d, d*0.6);
+    const portaEsq = new THREE.Mesh(portaGeo, matPorta);
+    portaEsq.position.set(-largura/2 + d + larguraPorta/2, altura/2, profundidade/2 - d*0.3);
+    portaEsq.castShadow = true; portaEsq.receiveShadow = true;
+    grupo.add(portaEsq);
+    const portaDir = new THREE.Mesh(portaGeo, matPorta);
+    portaDir.position.set(largura/2 - d - larguraPorta/2, altura/2, profundidade/2 - d*0.3 + d*0.6);
+    portaDir.castShadow = true; portaDir.receiveShadow = true;
+    grupo.add(portaDir);
+
+    // Puxadores
+    const puxGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    const matPux = new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.2 });
+    const posXPux = largura/2 - d - 10;
+    const pux1 = new THREE.Mesh(puxGeo, matPux);
+    pux1.position.set(posXPux, altura*0.75, profundidade/2 + 1);
+    grupo.add(pux1);
+    const pux2 = new THREE.Mesh(puxGeo, matPux);
+    pux2.position.set(posXPux, altura*0.25, profundidade/2 + 1);
+    grupo.add(pux2);
+
+    this.scene.add(grupo);
+  }
+
+  animar() {
+    requestAnimationFrame(() => this.animar());
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  exportarPecas() {
+    const { largura, altura, profundidade, numPrateleiras, espessura } = this.params;
+    const d = espessura;
+    const pecas = [];
+    pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
+    pecas.push({ nome: 'Lateral Direita', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
+    pecas.push({ nome: 'Fundo', qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade} cm` });
+    pecas.push({ nome: 'Teto', qtd: 1, dim: `${largura} x ${d} x ${profundidade} cm` });
+    if (numPrateleiras > 0) {
+      pecas.push({ nome: 'Prateleira', qtd: numPrateleiras, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d} cm` });
+    }
+    pecas.push({ nome: 'Porta (correr)', qtd: 2, dim: `${(largura - 2*d) / 2 + d*0.5} x ${altura - 2*d} x ${d*0.6} cm` });
+    const textArea = document.getElementById('output-medidas');
+    if (textArea) {
+      textArea.value = pecas.map(p => `${p.nome} (${p.qtd}x): ${p.dim}`).join('\n');
     }
   }
+}
 
-  window.fecharModal();
-  window.renderOrcamentos();
-  alert('Orçamento salvo com sucesso!');
-};
-
-window.excluirOrcamento = async (id) => {
-  if (!confirm('Excluir este orçamento?')) return;
-  await supabaseClient.from('mdf_itens').delete().eq('orcamento_id', id);
-  await supabaseClient.from('mdf_orcamentos').delete().eq('id', id);
-  window.renderOrcamentos();
-};
-
-window.duplicarOrcamento = async (id) => {
-  if (!confirm('Duplicar este orçamento?')) return;
-  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select().eq('id', id).single();
-  if (!orc) return;
-  const { data: itensData } = await supabaseClient.from('mdf_itens').select().eq('orcamento_id', id);
-
-  const { data: novo } = await supabaseClient.from('mdf_orcamentos').insert({
-    cliente_nome: orc.cliente_nome,
-    status: 'ABERTO',
-    observacoes: orc.observacoes
-  }).select().single();
-
-  if (novo && itensData) {
-    const novosItens = itensData.map(i => ({
-      orcamento_id: novo.id,
-      nome: i.nome,
-      descricao: i.descricao,
-      preco: i.preco,
-      desconto: i.desconto,
-      foto_url: i.foto_url
-    }));
-    await supabaseClient.from('mdf_itens').insert(novosItens);
-  }
-  window.renderOrcamentos();
-  alert('Orçamento duplicado!');
-};
-
-// ==================== PDF ====================
-window.gerarPDF = async () => {
-  const clienteNome = document.getElementById('cliente').selectedOptions[0]?.text || 'Consumidor Final';
-  const obs = document.getElementById('observacoes').value;
-  const itensAtivos = itens.filter(i => !i.removido);
-  const subtotal = itensAtivos.reduce((s, i) => s + i.preco, 0);
-  const tipo = document.getElementById('tipo-desconto').value;
-  const valor = parseFloat(document.getElementById('valor-desconto').value) || 0;
-  const desconto = tipo === '%' ? subtotal * (valor / 100) : valor;
-  const total = Math.max(0, subtotal - desconto);
-
-  const rowsHtml = itensAtivos.map((item, idx) => `
-    <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
-      <td style="padding: 8px;">
-        ${item.foto_url ? `<img src="${item.foto_url}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; vertical-align:middle;"> ` : ''}
-        ${item.nome}
-      </td>
-      <td style="padding: 8px;">${item.descricao}</td>
-      <td style="padding: 8px; text-align: right;">R$ ${item.preco.toFixed(2)}</td>
-      <td style="padding: 8px; text-align: right;">R$ ${item.desconto.toFixed(2)}</td>
-      <td style="padding: 8px; text-align: right; font-weight: bold;">R$ ${(item.preco - item.desconto).toFixed(2)}</td>
-    </tr>
-  `).join('');
-
-  const html = `
-    <div style="font-family: Helvetica; padding: 20px; max-width: 800px; margin: auto; background: white;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <img src="logo.png" style="height: 60px; display: block; margin: 0 auto;" onerror="this.style.display='none'">
-        <h2 style="color: #b8a94e; margin-top: 5px;">RV PORTAL MADEIRAS</h2>
-        <p style="font-size: 14px; color: #475569;">CNPJ: 30.942.123/0001-02 | Rua Mineiros, 532 - Jataí/GO</p>
-        <h3 style="margin-top: 20px;">ORÇAMENTO</h3>
-      </div>
-      <div style="margin-bottom: 20px;">
-        <p><strong>Cliente:</strong> ${clienteNome}</p>
-        <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
-        ${obs ? `<p><strong>Observações:</strong> ${obs}</p>` : ''}
-      </div>
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-        <thead>
-          <tr style="background: #1e293b; color: white;">
-            <th style="padding: 8px; text-align: left;">Item</th>
-            <th style="padding: 8px; text-align: left;">Descrição</th>
-            <th style="padding: 8px; text-align: right;">Preço</th>
-            <th style="padding: 8px; text-align: right;">Desc.</th>
-            <th style="padding: 8px; text-align: right;">Total</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      <div style="text-align: right; font-size: 18px; font-weight: bold; border-top: 2px solid #1e293b; padding-top: 10px;">
-        Total: R$ ${total.toFixed(2)}
-      </div>
-      <div style="margin-top: 40px; text-align: center; font-size: 12px; color: #64748b;">
-        RV Portal Madeiras - Obrigado pela preferência!
-      </div>
-    </div>
-  `;
-
-  const opt = {
-    margin: 10,
-    filename: `orcamento_${clienteNome.replace(/\s+/g, '_')}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-
-  const area = document.getElementById('print-area');
-  area.innerHTML = html;
-  await html2pdf().set(opt).from(html).save();
-};
-
-window.baixarPDF = async (id) => {
-  const { data: orc } = await supabaseClient.from('mdf_orcamentos').select().eq('id', id).single();
-  if (!orc) return;
-  const { data: itensData } = await supabaseClient.from('mdf_itens').select().eq('orcamento_id', id);
-  const itens = itensData || [];
-
-  const rowsHtml = itens.map((item, idx) => `
-    <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
-      <td style="padding: 8px;">${item.foto_url ? `<img src="${item.foto_url}" style="width:40px; height:40px; border-radius:4px; vertical-align:middle;"> ` : ''}${item.nome}</td>
-      <td style="padding: 8px;">${item.descricao || ''}</td>
-      <td style="padding: 8px; text-align: right;">R$ ${parseFloat(item.preco).toFixed(2)}</td>
-      <td style="padding: 8px; text-align: right;">R$ ${parseFloat(item.desconto || 0).toFixed(2)}</td>
-      <td style="padding: 8px; text-align: right; font-weight: bold;">R$ ${(parseFloat(item.preco) - parseFloat(item.desconto || 0)).toFixed(2)}</td>
-    </tr>
-  `).join('');
-
-  const total = itens.reduce((s, i) => s + parseFloat(i.preco) - parseFloat(i.desconto || 0), 0);
-  const html = `
-    <div style="font-family: Helvetica; padding: 20px; max-width: 800px; margin: auto; background: white;">
-      <div style="text-align: center;">
-        <img src="logo.png" style="height: 60px;" onerror="this.style.display='none'">
-        <h2 style="color: #b8a94e;">RV PORTAL MADEIRAS</h2>
-        <p style="font-size: 14px;">CNPJ: 30.942.123/0001-02 | Rua Mineiros, 532 - Jataí/GO</p>
-        <h3>ORÇAMENTO #${orc.id}</h3>
-      </div>
-      <p><strong>Cliente:</strong> ${orc.cliente_nome}</p>
-      <p><strong>Data:</strong> ${new Date(orc.created_at).toLocaleDateString('pt-BR')}</p>
-      ${orc.observacoes ? `<p><strong>Obs:</strong> ${orc.observacoes}</p>` : ''}
-      <table style="width:100%; border-collapse: collapse; margin-top:15px;">
-        <thead><tr style="background:#1e293b; color:white;"><th>Item</th><th>Desc.</th><th>Preço</th><th>Desc.</th><th>Total</th></tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      <div style="text-align:right; margin-top:15px; font-size:18px; font-weight:bold;">Total: R$ ${total.toFixed(2)}</div>
-    </div>
-  `;
-
-  const opt = {
-    margin: 10,
-    filename: `orcamento_${orc.cliente_nome}_#${id}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-  document.getElementById('print-area').innerHTML = html;
-  await html2pdf().set(opt).from(html).save();
-};
-
-window.imprimirOrcamento = (id) => {
-  window.baixarPDF(id); // ou abrir em nova janela com window.open? por enquanto baixa
+// Função global acessível pelo HTML
+window.iniciarProjetos = function() {
+  const container = document.getElementById('view-projetos');
+  if (!container || container.dataset.projetoIniciado === 'true') return;
+  container.dataset.projetoIniciado = 'true';
+  container.classList.remove('p-8', 'text-center', 'text-slate-500');
+  container.innerHTML = '';
+  new ConfiguradorArmario(container);
 };
