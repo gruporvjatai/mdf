@@ -133,7 +133,6 @@ class ProjetosManager {
 
     // Prateleiras extras (se não houver blocos de prateleira, mantém as do configurador?)
     if (!this.blocosFachada.some(b => b.tipo === 'prateleira')) {
-      // Adiciona prateleiras padrão (igual ao configurador antigo)
       const numPrateleiras = 3; // default
       if (numPrateleiras > 0 && altura > 2*d) {
         pecas.push({ nome: `Prateleira Interna`, qtd: numPrateleiras, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d}` });
@@ -144,7 +143,6 @@ class ProjetosManager {
   }
 
   obterDimensoesGerais() {
-    // Se houver blocos, usa a largura do maior bloco + laterais; senão, usa padrão 200x220
     if (this.blocosFachada.length > 0) {
       const maxLargura = Math.max(...this.blocosFachada.map(b => b.x + b.width));
       const maxAltura = Math.max(...this.blocosFachada.map(b => b.y + b.height));
@@ -154,27 +152,24 @@ class ProjetosManager {
   }
 
   enviarParaOrcamento(pecas) {
-    // Chama a função do app.js para abrir o modal de orçamento com itens preenchidos
     if (typeof window.abrirNovoOrcamento === 'function') {
       window.abrirNovoOrcamento();
-      // Aguarda o modal abrir e então adiciona itens
       setTimeout(() => {
         pecas.forEach(p => {
           window.adicionarItem({
             nome: p.nome,
             descricao: p.dim,
-            preco: 0, // usuário informa o preço
+            preco: 0,
             desconto: 0
           });
         });
       }, 500);
-      // Volta para a aba Orçamentos (se a função navigate existir)
       if (typeof navigate === 'function') navigate('orcamentos');
     }
   }
 }
 
-// ==================== EDITOR DE FACHADA 2D ====================
+// ==================== EDITOR DE FACHADA 2D (ESTILO FLATMA SKETCH) ====================
 class EditorFachada2D {
   constructor(container, manager) {
     this.container = container;
@@ -182,13 +177,12 @@ class EditorFachada2D {
     this.blocos = [];
     this.idCounter = 0;
     this.escala = 2; // pixels por cm
-    this.grade = 50; // cm
-    this.modo = null; // 'porta', 'gaveta', 'prateleira' ou null
-    this.arrastando = null;
-    this.redimensionando = null;
-    this.offset = { x: 0, y: 0 };
-    this.larguraTotal = 200; // cm
-    this.alturaTotal = 220;
+    this.grade = 10; // cm (grade mais fina, estilo Flatma)
+    this.modo = 'porta'; // 'porta', 'gaveta', 'prateleira'
+    this.drawing = false;
+    this.startX = 0;
+    this.startY = 0;
+    this.currentRect = null; // retângulo temporário durante o arrasto
     this.renderizar();
   }
 
@@ -199,11 +193,12 @@ class EditorFachada2D {
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-[#b8a94e] text-white" data-tool="porta">🚪 Porta</button>
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-slate-200 text-slate-700" data-tool="gaveta">🗄️ Gaveta</button>
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-slate-200 text-slate-700" data-tool="prateleira">📏 Prateleira</button>
-          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-red-100 text-red-700" data-tool="remover">🗑️ Remover Selecionado</button>
-          <span class="text-xs text-slate-500 ml-2">Escala: 1cm = 2px | Grade: 50cm</span>
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-red-100 text-red-700" data-tool="desfazer">↩️ Desfazer Último</button>
+          <span class="text-xs text-slate-500 ml-2">Grade: ${this.grade}cm | Arraste para desenhar</span>
         </div>
         <div class="flex-1 bg-white rounded-xl border shadow-sm relative overflow-hidden" id="canvas-fachada" style="min-height: 500px;">
           <canvas id="fachada-canvas" class="absolute inset-0 w-full h-full"></canvas>
+          <div id="preview-info" class="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded hidden"></div>
         </div>
       </div>
     `;
@@ -212,7 +207,7 @@ class EditorFachada2D {
     this.ctx = this.canvas.getContext('2d');
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
-    this.desenharGrade();
+    this.desenhar();
     this.bindEventos();
   }
 
@@ -220,10 +215,6 @@ class EditorFachada2D {
     const container = document.getElementById('canvas-fachada');
     this.canvas.width = container.clientWidth;
     this.canvas.height = container.clientHeight;
-    this.desenhar();
-  }
-
-  desenharGrade() {
     this.desenhar();
   }
 
@@ -250,29 +241,59 @@ class EditorFachada2D {
       ctx.stroke();
     }
 
-    // Blocos
+    // Linhas de 1 metro (100cm) mais escuras
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    const passoMetro = 100 * this.escala;
+    for (let x = 0; x < w; x += passoMetro) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += passoMetro) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Blocos já desenhados
     this.blocos.forEach(bloco => {
       ctx.fillStyle = bloco.tipo === 'porta' ? 'rgba(139,90,43,0.8)' : bloco.tipo === 'gaveta' ? 'rgba(160,120,60,0.8)' : 'rgba(180,140,80,0.6)';
       ctx.fillRect(bloco.x * this.escala, bloco.y * this.escala, bloco.width * this.escala, bloco.height * this.escala);
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 2;
       ctx.strokeRect(bloco.x * this.escala, bloco.y * this.escala, bloco.width * this.escala, bloco.height * this.escala);
-      // Texto
       ctx.fillStyle = '#fff';
       ctx.font = '10px sans-serif';
       ctx.fillText(`${bloco.tipo} ${bloco.width.toFixed(0)}x${bloco.height.toFixed(0)}cm`, bloco.x * this.escala + 4, bloco.y * this.escala + 14);
     });
+
+    // Retângulo atual sendo desenhado (preview)
+    if (this.currentRect) {
+      const { x, y, width, height } = this.currentRect;
+      ctx.fillStyle = 'rgba(0,0,0,0.1)';
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(x, y, width, height);
+      ctx.setLineDash([]);
+    }
   }
 
   bindEventos() {
+    // Botões de ferramenta
     this.container.querySelectorAll('.tool-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const tool = e.target.dataset.tool;
-        if (tool === 'remover') {
-          // Remove o último bloco clicado (simplificado)
-          if (this.blocos.length) this.blocos.pop();
-          this.sincronizar();
-          this.desenhar();
+        if (tool === 'desfazer') {
+          if (this.blocos.length) {
+            this.blocos.pop();
+            this.sincronizar();
+            this.desenhar();
+          }
         } else {
           this.modo = tool;
           this.container.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('bg-[#b8a94e]', 'text-white'));
@@ -281,9 +302,10 @@ class EditorFachada2D {
       });
     });
 
+    // Eventos de mouse no canvas
     this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    this.canvas.addEventListener('mouseup', () => this.onMouseUp());
+    window.addEventListener('mouseup', (e) => this.onMouseUp(e)); // global para não perder o evento fora do canvas
   }
 
   obterCoordenadasCanvas(e) {
@@ -294,49 +316,70 @@ class EditorFachada2D {
     };
   }
 
+  snap(valor) {
+    return Math.round(valor / this.grade) * this.grade;
+  }
+
   onMouseDown(e) {
     const { x, y } = this.obterCoordenadasCanvas(e);
-    // Verifica se clicou num bloco existente para arrastar
-    const blocoClicado = this.blocos.find(b => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height);
-    if (blocoClicado) {
-      this.arrastando = blocoClicado;
-      this.offset = { x: x - blocoClicado.x, y: y - blocoClicado.y };
-      return;
-    }
-    // Se não clicou em bloco e tem modo, cria novo bloco
-    if (this.modo) {
-      const novoBloco = {
-        id: ++this.idCounter,
-        tipo: this.modo,
-        x: x - 20, // centraliza
-        y: y - 30,
-        width: 40,
-        height: 60
-      };
-      if (this.modo === 'prateleira') {
-        novoBloco.width = 80;
-        novoBloco.height = 4;
-      }
-      this.blocos.push(novoBloco);
-      this.sincronizar();
-      this.desenhar();
-    }
+    // Snap nas coordenadas iniciais
+    this.startX = this.snap(x);
+    this.startY = this.snap(y);
+    this.drawing = true;
+    this.currentRect = {
+      x: this.startX * this.escala,
+      y: this.startY * this.escala,
+      width: 0,
+      height: 0
+    };
+    document.getElementById('preview-info').classList.remove('hidden');
+    this.desenhar();
   }
 
   onMouseMove(e) {
-    if (this.arrastando) {
-      const { x, y } = this.obterCoordenadasCanvas(e);
-      this.arrastando.x = x - this.offset.x;
-      this.arrastando.y = y - this.offset.y;
-      this.desenhar();
+    if (!this.drawing) return;
+    const { x, y } = this.obterCoordenadasCanvas(e);
+    const snappedX = this.snap(x);
+    const snappedY = this.snap(y);
+    const w = snappedX - this.startX;
+    const h = snappedY - this.startY;
+    this.currentRect = {
+      x: w >= 0 ? this.startX * this.escala : snappedX * this.escala,
+      y: h >= 0 ? this.startY * this.escala : snappedY * this.escala,
+      width: Math.abs(w) * this.escala,
+      height: Math.abs(h) * this.escala
+    };
+    // Atualiza info de dimensões
+    const info = document.getElementById('preview-info');
+    if (info) {
+      info.innerText = `${Math.abs(w)} x ${Math.abs(h)} cm`;
     }
+    this.desenhar();
   }
 
-  onMouseUp() {
-    if (this.arrastando) {
-      this.arrastando = null;
+  onMouseUp(e) {
+    if (!this.drawing) return;
+    this.drawing = false;
+    const { width, height, x, y } = this.currentRect;
+    const wCm = width / this.escala;
+    const hCm = height / this.escala;
+    const xCm = x / this.escala;
+    const yCm = y / this.escala;
+    if (wCm > 0 && hCm > 0) {
+      const novoBloco = {
+        id: ++this.idCounter,
+        tipo: this.modo,
+        x: xCm,
+        y: yCm,
+        width: wCm,
+        height: hCm
+      };
+      this.blocos.push(novoBloco);
       this.sincronizar();
     }
+    this.currentRect = null;
+    document.getElementById('preview-info').classList.add('hidden');
+    this.desenhar();
   }
 
   sincronizar() {
@@ -344,7 +387,7 @@ class EditorFachada2D {
   }
 }
 
-// ==================== CONFIGURADOR 3D (adaptado) ====================
+// ==================== CONFIGURADOR 3D (mantido igual) ====================
 class ConfiguradorArmario {
   constructor(container, manager) {
     this.container = container;
@@ -396,7 +439,6 @@ class ConfiguradorArmario {
     if (this.manager.blocosFachada.length) {
       this.reconstruirAPartirDosBlocos(this.manager.blocosFachada);
     } else {
-      // Armário padrão
       this.reconstruirModelo({
         largura: 200, altura: 220, profundidade: 60,
         numPrateleiras: 3, espessura: 1.8
@@ -409,7 +451,7 @@ class ConfiguradorArmario {
     const profundidade = this.manager.profundidade;
     this.reconstruirModelo({
       largura, altura, profundidade,
-      numPrateleiras: 0, // prateleiras virão dos blocos
+      numPrateleiras: 0,
       espessura: 1.8,
       blocos: blocos
     });
@@ -424,15 +466,12 @@ class ConfiguradorArmario {
     const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
 
-    // Laterais
     const lateralGeo = new THREE.BoxGeometry(d, altura, profundidade);
     const latE = new THREE.Mesh(lateralGeo, matCorpo); latE.position.set(-largura/2 + d/2, altura/2, 0); this.armarioGrupo.add(latE);
     const latD = new THREE.Mesh(lateralGeo, matCorpo); latD.position.set(largura/2 - d/2, altura/2, 0); this.armarioGrupo.add(latD);
-    // Fundo e Teto
     const fundo = new THREE.Mesh(new THREE.BoxGeometry(largura - 2*d, d, profundidade), matCorpo); fundo.position.set(0, d/2, 0); this.armarioGrupo.add(fundo);
     const teto = new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo); teto.position.set(0, altura - d/2, 0); this.armarioGrupo.add(teto);
 
-    // Blocos da fachada
     blocos.forEach(bloco => {
       const w = bloco.width;
       const h = bloco.height;
