@@ -1,4 +1,4 @@
-// projetos.js – Editor 2D + 3D + Orçamento (completo, sem erros)
+// projetos.js – Editor 2D + 3D + Orçamento (gavetas 3D reais e fundo na lista)
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -7,8 +7,8 @@ class ProjetosManager {
   constructor(container) {
     this.container = container;
     this.profundidade = 60;
-    this.linhas = [];           // { x1, y1, x2, y2 } em cm
-    this.preenchimentos = [];   // { x, y, w, h, tipo, subdivisoes }
+    this.linhas = [];
+    this.preenchimentos = [];
     this.init();
   }
 
@@ -95,7 +95,7 @@ class ProjetosManager {
     const d = 1.8;
     const dims = this.obterDimensoesGerais();
     if (!dims) return pecas;
-    const { largura, altura } = dims;
+    const { largura, altura, offsetY } = dims;
     const profundidade = this.profundidade;
 
     pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
@@ -105,7 +105,7 @@ class ProjetosManager {
 
     this.linhas.forEach(linha => {
       const y = linha.y1;
-      if (y > this.obterDimensoesGerais().offsetY + 5 && y < this.obterDimensoesGerais().offsetY + altura - 5) {
+      if (y > offsetY + 5 && y < offsetY + altura - 5) {
         pecas.push({ nome: `Prateleira Fixa (y=${y.toFixed(0)})`, qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d}` });
       }
     });
@@ -114,13 +114,21 @@ class ProjetosManager {
       if (p.tipo === 'porta') {
         pecas.push({ nome: `Porta (${p.w.toFixed(0)}x${p.h.toFixed(0)})`, qtd: p.subdivisoes || 1, dim: `${(p.w/(p.subdivisoes||1)).toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
       } else if (p.tipo === 'gaveta') {
-        pecas.push({ nome: `Frente Gaveta (${p.w.toFixed(0)}x${p.h.toFixed(0)})`, qtd: p.subdivisoes || 1, dim: `${(p.w/(p.subdivisoes||1)).toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
+        const sub = p.subdivisoes || 1;
+        const subW = p.w / sub;
+        // Frente da gaveta
+        pecas.push({ nome: `Frente Gaveta (${subW.toFixed(0)}x${p.h.toFixed(0)})`, qtd: sub, dim: `${subW.toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
+        // Laterais da gaveta (duas por gaveta)
+        pecas.push({ nome: `Lateral Gaveta (${subW.toFixed(0)}x${profundidade-2})`, qtd: sub * 2, dim: `${d} x ${p.h.toFixed(0)} x ${profundidade-2}` });
+        // Fundo da gaveta (um por gaveta)
+        pecas.push({ nome: `Fundo Gaveta (${subW.toFixed(0)}x${profundidade-2})`, qtd: sub, dim: `${subW.toFixed(0)} x ${d} x ${profundidade-2}` });
       }
     });
 
     return pecas;
   }
 
+  // ... (atualizarOrcamento mantido igual, sem alterações)
   atualizarOrcamento() {
     const area = document.getElementById('subaba-orcamento');
     if (!area) return;
@@ -143,6 +151,7 @@ class ProjetosManager {
 }
 
 // ==================== EDITOR DE FACHADA 2D ====================
+// (mantido exatamente igual à versão anterior, sem modificações)
 class EditorFachada2D {
   constructor(container, manager) {
     this.container = container;
@@ -353,7 +362,7 @@ class EditorFachada2D {
   }
 }
 
-// ==================== CONFIGURADOR 3D ====================
+// ==================== CONFIGURADOR 3D (COM GAVETAS REAIS) ====================
 class ConfiguradorArmario {
   constructor(container, manager) {
     this.container = container;
@@ -414,7 +423,7 @@ class ConfiguradorArmario {
 
     const { largura, altura, offsetX, offsetY } = dims;
     const profundidade = this.manager.profundidade;
-    const d = 1.8;
+    const d = 1.8; // espessura padrão das chapas
     const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
     const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
@@ -427,7 +436,7 @@ class ConfiguradorArmario {
       return { x: x3D, y: y3D };
     };
 
-    // Laterais
+    // Laterais, fundo e teto (estrutura fixa)
     const leftX = offsetX;
     const rightX = offsetX + largura;
     const latEsq = new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo);
@@ -436,8 +445,6 @@ class ConfiguradorArmario {
     const latDir = new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo);
     latDir.position.set(to3D(rightX, 0).x, altura / 2, 0);
     this.armarioGrupo.add(latDir);
-
-    // Fundo e teto
     const fundo = new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo);
     fundo.position.set(0, d / 2, 0);
     this.armarioGrupo.add(fundo);
@@ -445,7 +452,7 @@ class ConfiguradorArmario {
     teto.position.set(0, altura - d / 2, 0);
     this.armarioGrupo.add(teto);
 
-    // Prateleiras
+    // Prateleiras fixas (linhas horizontais)
     this.manager.linhas.forEach(linha => {
       if (Math.abs(linha.y1 - linha.y2) < 0.1) {
         const yCanvas = linha.y1;
@@ -468,10 +475,46 @@ class ConfiguradorArmario {
       for (let i = 0; i < sub; i++) {
         const cx = baseX3D + subW / 2 + i * subW;
         const cy = centroY3D;
-        const mat = p.tipo === 'porta' ? matPorta : matGaveta;
-        const peca = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, d * 0.8), mat);
-        peca.position.set(cx, cy, profundidade / 2 - (d * 0.8) / 2);
-        this.armarioGrupo.add(peca);
+
+        if (p.tipo === 'porta') {
+          // Porta: apenas um painel na frente
+          const porta = new THREE.Mesh(
+            new THREE.BoxGeometry(subW, p.h, d * 0.8),
+            matPorta
+          );
+          porta.position.set(cx, cy, profundidade / 2 - (d * 0.8) / 2);
+          this.armarioGrupo.add(porta);
+        } else if (p.tipo === 'gaveta') {
+          // Gaveta: frente + corpo (laterais e fundo)
+          const frente = new THREE.Mesh(
+            new THREE.BoxGeometry(subW, p.h, d * 0.8),
+            matGaveta
+          );
+          frente.position.set(cx, cy, profundidade / 2 - (d * 0.8) / 2);
+          this.armarioGrupo.add(frente);
+
+          // Corpo da gaveta (caixa que entra para dentro)
+          const profundidadeGaveta = profundidade - 5; // um pouco menor que o móvel
+          const alturaCorpo = p.h - d * 2; // descontando espessura do fundo e topo da caixa
+          const larguraCorpo = subW - d * 2;
+
+          // Laterais da gaveta
+          const latGavetaGeo = new THREE.BoxGeometry(d, alturaCorpo, profundidadeGaveta);
+          const latGavetaEsq = new THREE.Mesh(latGavetaGeo, matGaveta);
+          latGavetaEsq.position.set(cx - subW/2 + d/2, cy, -profundidadeGaveta/2 + d);
+          this.armarioGrupo.add(latGavetaEsq);
+          const latGavetaDir = new THREE.Mesh(latGavetaGeo, matGaveta);
+          latGavetaDir.position.set(cx + subW/2 - d/2, cy, -profundidadeGaveta/2 + d);
+          this.armarioGrupo.add(latGavetaDir);
+
+          // Fundo da gaveta
+          const fundoGaveta = new THREE.Mesh(
+            new THREE.BoxGeometry(larguraCorpo, d, profundidadeGaveta),
+            matGaveta
+          );
+          fundoGaveta.position.set(cx, cy - alturaCorpo/2 + d/2, -profundidadeGaveta/2 + d);
+          this.armarioGrupo.add(fundoGaveta);
+        }
       }
     });
 
