@@ -2,103 +2,373 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-class ConfiguradorArmario {
+// ==================== CLASSE PRINCIPAL DE PROJETOS ====================
+class ProjetosManager {
   constructor(container) {
     this.container = container;
-    this.params = {
-      largura: 200,   // cm
-      altura: 220,
-      profundidade: 60,
-      numPrateleiras: 3,
-      espessura: 1.8, // cm
-      corCorpo: '#A67B5B',
-      corPorta: '#8B5A2B',
-    };
+    this.profundidade = 60; // cm – será usada tanto no 2D quanto no 3D
+    this.blocosFachada = []; // array de objetos { id, tipo, x, y, w, h, ... }
     this.init();
   }
 
-  async init() {
-    this.criarInterface();
-    try {
-      this.criarCena();
-      this.animar();
-    } catch (e) {
-      console.error('Erro ao criar a cena 3D:', e);
-      document.getElementById('canvas-container').innerHTML = 
-        '<p class="text-red-500 p-4">Erro ao carregar o visualizador 3D. Veja o console (F12).</p>';
-    }
+  init() {
+    this.renderizarInterface();
+    this.mostrarSubAba('fachada'); // começa no editor 2D
   }
 
-  criarInterface() {
+  renderizarInterface() {
     this.container.innerHTML = `
-      <div class="flex flex-col lg:flex-row gap-4 h-full">
-        <div class="lg:w-1/4 bg-white rounded-xl shadow border p-4 space-y-4 overflow-y-auto">
-          <h3 class="text-lg font-bold text-slate-800">Parâmetros</h3>
-          <div>
-            <label class="block text-sm font-medium text-slate-600">Largura (cm)</label>
-            <input type="range" id="inp-largura" min="80" max="400" value="${this.params.largura}" class="w-full">
-            <span id="val-largura" class="text-xs">${this.params.largura} cm</span>
+      <div class="flex flex-col h-full">
+        <!-- Barra superior de sub-abas -->
+        <div class="flex gap-2 mb-4 bg-white p-2 rounded-xl shadow-sm border">
+          <button data-subaba="fachada" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm transition bg-[#b8a94e] text-white shadow">📐 Fachada 2D</button>
+          <button data-subaba="3d" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm transition text-slate-600 hover:bg-slate-100">🧊 Visualização 3D</button>
+          <button data-subaba="orcamento" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm transition text-slate-600 hover:bg-slate-100">🧾 Orçamento</button>
+          <div class="flex-1"></div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-bold text-slate-600">Profundidade:</label>
+            <input type="number" id="profundidade-input" value="60" min="30" max="80" class="w-16 p-1 border rounded text-xs" onchange="window.profundidadeProjeto = parseFloat(this.value)">
           </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-600">Altura (cm)</label>
-            <input type="range" id="inp-altura" min="100" max="280" value="${this.params.altura}" class="w-full">
-            <span id="val-altura">${this.params.altura} cm</span>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-600">Profundidade (cm)</label>
-            <input type="range" id="inp-profundidade" min="30" max="70" value="${this.params.profundidade}" class="w-full">
-            <span id="val-profundidade">${this.params.profundidade} cm</span>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-600">Prateleiras</label>
-            <input type="range" id="inp-prateleiras" min="0" max="8" value="${this.params.numPrateleiras}" class="w-full">
-            <span id="val-prateleiras">${this.params.numPrateleiras}</span>
-          </div>
-          <button id="btn-exportar-medidas" class="w-full btn-primary px-4 py-2 rounded-lg font-bold shadow">
-            📐 Exportar Peças
-          </button>
-          <textarea id="output-medidas" rows="6" class="w-full p-2 border rounded text-xs bg-slate-50" readonly></textarea>
         </div>
-        <div class="flex-1 relative rounded-xl overflow-hidden border shadow" id="canvas-container" style="min-height: 400px; background: #e2e8f0;"></div>
+        <!-- Área dinâmica -->
+        <div id="subaba-fachada" class="subaba-content flex-1"></div>
+        <div id="subaba-3d" class="subaba-content flex-1 hidden"></div>
+        <div id="subaba-orcamento" class="subaba-content flex-1 hidden"></div>
       </div>
     `;
 
-    this.bindEvents();
-  }
-
-  bindEvents() {
-    const atualizar = () => {
-      this.params.largura = parseFloat(document.getElementById('inp-largura').value);
-      this.params.altura = parseFloat(document.getElementById('inp-altura').value);
-      this.params.profundidade = parseFloat(document.getElementById('inp-profundidade').value);
-      this.params.numPrateleiras = parseInt(document.getElementById('inp-prateleiras').value);
-
-      document.getElementById('val-largura').innerText = `${this.params.largura} cm`;
-      document.getElementById('val-altura').innerText = `${this.params.altura} cm`;
-      document.getElementById('val-profundidade').innerText = `${this.params.profundidade} cm`;
-      document.getElementById('val-prateleiras').innerText = this.params.numPrateleiras;
-
-      this.reconstruirModelo();
-    };
-
-    ['inp-largura','inp-altura','inp-profundidade','inp-prateleiras'].forEach(id => {
-      document.getElementById(id).addEventListener('input', atualizar);
+    // Eventos dos botões de sub-aba
+    this.container.querySelectorAll('.subaba-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => this.mostrarSubAba(e.target.dataset.subaba));
     });
 
-    document.getElementById('btn-exportar-medidas').addEventListener('click', () => this.exportarPecas());
+    // Referência global para a profundidade ser acessada pelo editor
+    window.profundidadeProjeto = this.profundidade;
+  }
+
+  mostrarSubAba(nome) {
+    // Atualiza botões ativos
+    this.container.querySelectorAll('.subaba-btn').forEach(btn => {
+      btn.classList.remove('bg-[#b8a94e]', 'text-white', 'shadow');
+      btn.classList.add('text-slate-600', 'hover:bg-slate-100');
+    });
+    const btnAtivo = this.container.querySelector(`[data-subaba="${nome}"]`);
+    if (btnAtivo) {
+      btnAtivo.classList.add('bg-[#b8a94e]', 'text-white', 'shadow');
+      btnAtivo.classList.remove('text-slate-600', 'hover:bg-slate-100');
+    }
+
+    // Esconde todas as áreas e mostra a selecionada
+    this.container.querySelectorAll('.subaba-content').forEach(el => el.classList.add('hidden'));
+    const area = document.getElementById(`subaba-${nome}`);
+    if (area) area.classList.remove('hidden');
+
+    // Inicializa a sub-aba se necessário
+    if (nome === 'fachada' && !this._fachadaIniciada) {
+      this._fachadaIniciada = true;
+      this.editor2D = new EditorFachada2D(area, this);
+    }
+    if (nome === '3d' && !this._3dIniciado) {
+      this._3dIniciado = true;
+      this.configurador3D = new ConfiguradorArmario(area, this);
+    }
+    if (nome === 'orcamento') {
+      this.atualizarOrcamento();
+    }
+  }
+
+  // Chamado quando o editor 2D altera os blocos
+  atualizarBlocos(novosBlocos) {
+    this.blocosFachada = novosBlocos;
+    // Se o 3D já foi iniciado, reconstrói o modelo
+    if (this.configurador3D) {
+      this.configurador3D.reconstruirAPartirDosBlocos(this.blocosFachada);
+    }
+  }
+
+  // Atualiza a aba de orçamento com a lista de peças
+  atualizarOrcamento() {
+    const area = document.getElementById('subaba-orcamento');
+    if (!area) return;
+    const pecas = this.gerarListaPecas();
+    area.innerHTML = `
+      <div class="bg-white rounded-xl shadow border p-4">
+        <h3 class="font-bold text-lg mb-3">Peças do Projeto</h3>
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100">
+            <tr><th class="p-2 text-left">Peça</th><th class="p-2 text-center">Qtd</th><th class="p-2 text-right">Dimensões (cm)</th></tr>
+          </thead>
+          <tbody>${pecas.map(p => `<tr class="border-b"><td class="p-2">${p.nome}</td><td class="p-2 text-center">${p.qtd}</td><td class="p-2 text-right">${p.dim}</td></tr>`).join('')}</tbody>
+        </table>
+        <button id="btn-enviar-orcamento" class="mt-4 btn-primary px-4 py-2 rounded-lg font-bold shadow">📤 Enviar para Orçamento</button>
+      </div>
+    `;
+    document.getElementById('btn-enviar-orcamento').addEventListener('click', () => this.enviarParaOrcamento(pecas));
+  }
+
+  gerarListaPecas() {
+    const pecas = [];
+    const d = 1.8; // espessura em cm
+    const { largura, altura } = this.obterDimensoesGerais();
+    const profundidade = this.profundidade;
+
+    // Laterais, fundo, teto (estrutura básica)
+    pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
+    pecas.push({ nome: 'Lateral Direita', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
+    pecas.push({ nome: 'Fundo', qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade}` });
+    pecas.push({ nome: 'Teto', qtd: 1, dim: `${largura} x ${d} x ${profundidade}` });
+
+    // A partir dos blocos da fachada
+    this.blocosFachada.forEach(bloco => {
+      if (bloco.tipo === 'porta') {
+        pecas.push({ nome: `Porta (${bloco.width.toFixed(0)}x${bloco.height.toFixed(0)})`, qtd: 1, dim: `${bloco.width.toFixed(0)} x ${bloco.height.toFixed(0)} x ${d*0.6}` });
+      } else if (bloco.tipo === 'gaveta') {
+        pecas.push({ nome: `Frente Gaveta (${bloco.width.toFixed(0)}x${bloco.height.toFixed(0)})`, qtd: 1, dim: `${bloco.width.toFixed(0)} x ${bloco.height.toFixed(0)} x ${d*0.6}` });
+        // Corpo da gaveta (laterais, fundo, traseira)
+        pecas.push({ nome: `Laterais Gaveta (${bloco.width.toFixed(0)}x${profundidade-2})`, qtd: 2, dim: `${d} x ${bloco.height.toFixed(0)} x ${profundidade-2}` });
+      } else if (bloco.tipo === 'prateleira') {
+        pecas.push({ nome: `Prateleira (${bloco.width.toFixed(0)}x${profundidade-2*d})`, qtd: 1, dim: `${bloco.width.toFixed(0)} x ${d} x ${profundidade-2*d}` });
+      }
+    });
+
+    // Prateleiras extras (se não houver blocos de prateleira, mantém as do configurador?)
+    if (!this.blocosFachada.some(b => b.tipo === 'prateleira')) {
+      // Adiciona prateleiras padrão (igual ao configurador antigo)
+      const numPrateleiras = 3; // default
+      if (numPrateleiras > 0 && altura > 2*d) {
+        pecas.push({ nome: `Prateleira Interna`, qtd: numPrateleiras, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d}` });
+      }
+    }
+
+    return pecas;
+  }
+
+  obterDimensoesGerais() {
+    // Se houver blocos, usa a largura do maior bloco + laterais; senão, usa padrão 200x220
+    if (this.blocosFachada.length > 0) {
+      const maxLargura = Math.max(...this.blocosFachada.map(b => b.x + b.width));
+      const maxAltura = Math.max(...this.blocosFachada.map(b => b.y + b.height));
+      return { largura: maxLargura + 3.6, altura: maxAltura + 3.6 }; // laterais de 1.8 cada
+    }
+    return { largura: 200, altura: 220 };
+  }
+
+  enviarParaOrcamento(pecas) {
+    // Chama a função do app.js para abrir o modal de orçamento com itens preenchidos
+    if (typeof window.abrirNovoOrcamento === 'function') {
+      window.abrirNovoOrcamento();
+      // Aguarda o modal abrir e então adiciona itens
+      setTimeout(() => {
+        pecas.forEach(p => {
+          window.adicionarItem({
+            nome: p.nome,
+            descricao: p.dim,
+            preco: 0, // usuário informa o preço
+            desconto: 0
+          });
+        });
+      }, 500);
+      // Volta para a aba Orçamentos (se a função navigate existir)
+      if (typeof navigate === 'function') navigate('orcamentos');
+    }
+  }
+}
+
+// ==================== EDITOR DE FACHADA 2D ====================
+class EditorFachada2D {
+  constructor(container, manager) {
+    this.container = container;
+    this.manager = manager;
+    this.blocos = [];
+    this.idCounter = 0;
+    this.escala = 2; // pixels por cm
+    this.grade = 50; // cm
+    this.modo = null; // 'porta', 'gaveta', 'prateleira' ou null
+    this.arrastando = null;
+    this.redimensionando = null;
+    this.offset = { x: 0, y: 0 };
+    this.larguraTotal = 200; // cm
+    this.alturaTotal = 220;
+    this.renderizar();
+  }
+
+  renderizar() {
+    this.container.innerHTML = `
+      <div class="flex flex-col gap-2 h-full">
+        <div class="flex gap-2 bg-white p-2 rounded-lg shadow-sm border items-center">
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-[#b8a94e] text-white" data-tool="porta">🚪 Porta</button>
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-slate-200 text-slate-700" data-tool="gaveta">🗄️ Gaveta</button>
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-slate-200 text-slate-700" data-tool="prateleira">📏 Prateleira</button>
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-red-100 text-red-700" data-tool="remover">🗑️ Remover Selecionado</button>
+          <span class="text-xs text-slate-500 ml-2">Escala: 1cm = 2px | Grade: 50cm</span>
+        </div>
+        <div class="flex-1 bg-white rounded-xl border shadow-sm relative overflow-hidden" id="canvas-fachada" style="min-height: 500px;">
+          <canvas id="fachada-canvas" class="absolute inset-0 w-full h-full"></canvas>
+        </div>
+      </div>
+    `;
+
+    this.canvas = document.getElementById('fachada-canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.resizeCanvas();
+    window.addEventListener('resize', () => this.resizeCanvas());
+    this.desenharGrade();
+    this.bindEventos();
+  }
+
+  resizeCanvas() {
+    const container = document.getElementById('canvas-fachada');
+    this.canvas.width = container.clientWidth;
+    this.canvas.height = container.clientHeight;
+    this.desenhar();
+  }
+
+  desenharGrade() {
+    this.desenhar();
+  }
+
+  desenhar() {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Grade
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    const passo = this.grade * this.escala;
+    for (let x = 0; x < w; x += passo) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += passo) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Blocos
+    this.blocos.forEach(bloco => {
+      ctx.fillStyle = bloco.tipo === 'porta' ? 'rgba(139,90,43,0.8)' : bloco.tipo === 'gaveta' ? 'rgba(160,120,60,0.8)' : 'rgba(180,140,80,0.6)';
+      ctx.fillRect(bloco.x * this.escala, bloco.y * this.escala, bloco.width * this.escala, bloco.height * this.escala);
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bloco.x * this.escala, bloco.y * this.escala, bloco.width * this.escala, bloco.height * this.escala);
+      // Texto
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`${bloco.tipo} ${bloco.width.toFixed(0)}x${bloco.height.toFixed(0)}cm`, bloco.x * this.escala + 4, bloco.y * this.escala + 14);
+    });
+  }
+
+  bindEventos() {
+    this.container.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const tool = e.target.dataset.tool;
+        if (tool === 'remover') {
+          // Remove o último bloco clicado (simplificado)
+          if (this.blocos.length) this.blocos.pop();
+          this.sincronizar();
+          this.desenhar();
+        } else {
+          this.modo = tool;
+          this.container.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('bg-[#b8a94e]', 'text-white'));
+          e.target.classList.add('bg-[#b8a94e]', 'text-white');
+        }
+      });
+    });
+
+    this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+    this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    this.canvas.addEventListener('mouseup', () => this.onMouseUp());
+  }
+
+  obterCoordenadasCanvas(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / this.escala,
+      y: (e.clientY - rect.top) / this.escala
+    };
+  }
+
+  onMouseDown(e) {
+    const { x, y } = this.obterCoordenadasCanvas(e);
+    // Verifica se clicou num bloco existente para arrastar
+    const blocoClicado = this.blocos.find(b => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height);
+    if (blocoClicado) {
+      this.arrastando = blocoClicado;
+      this.offset = { x: x - blocoClicado.x, y: y - blocoClicado.y };
+      return;
+    }
+    // Se não clicou em bloco e tem modo, cria novo bloco
+    if (this.modo) {
+      const novoBloco = {
+        id: ++this.idCounter,
+        tipo: this.modo,
+        x: x - 20, // centraliza
+        y: y - 30,
+        width: 40,
+        height: 60
+      };
+      if (this.modo === 'prateleira') {
+        novoBloco.width = 80;
+        novoBloco.height = 4;
+      }
+      this.blocos.push(novoBloco);
+      this.sincronizar();
+      this.desenhar();
+    }
+  }
+
+  onMouseMove(e) {
+    if (this.arrastando) {
+      const { x, y } = this.obterCoordenadasCanvas(e);
+      this.arrastando.x = x - this.offset.x;
+      this.arrastando.y = y - this.offset.y;
+      this.desenhar();
+    }
+  }
+
+  onMouseUp() {
+    if (this.arrastando) {
+      this.arrastando = null;
+      this.sincronizar();
+    }
+  }
+
+  sincronizar() {
+    this.manager.atualizarBlocos(this.blocos);
+  }
+}
+
+// ==================== CONFIGURADOR 3D (adaptado) ====================
+class ConfiguradorArmario {
+  constructor(container, manager) {
+    this.container = container;
+    this.manager = manager;
+    this.scene = null;
+    this.camera = null;
+    this.renderer = null;
+    this.controls = null;
+    this.armarioGrupo = null;
+    this.init();
+  }
+
+  init() {
+    this.container.innerHTML = '';
+    this.criarCena();
+    this.animar();
   }
 
   criarCena() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#f1f5f9');
 
-    const container = document.getElementById('canvas-container');
-    if (!container) throw new Error('Container canvas-container não encontrado.');
-
-    // Garantir dimensões mínimas para o canvas
-    const w = container.clientWidth || 600;
-    const h = container.clientHeight || 400;
-
+    const w = this.container.clientWidth || 600;
+    const h = this.container.clientHeight || 400;
     this.camera = new THREE.PerspectiveCamera(45, w / h, 10, 1000);
     this.camera.position.set(250, 180, 300);
     this.camera.lookAt(0, 120, 0);
@@ -106,163 +376,99 @@ class ConfiguradorArmario {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(this.renderer.domElement);
+    this.container.appendChild(this.renderer.domElement);
 
-    // Luzes
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambient);
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
     dirLight.position.set(100, 200, 150);
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 10;
-    dirLight.shadow.camera.far = 600;
     this.scene.add(dirLight);
 
-    // Controles de órbita (com verificação)
-    try {
-      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-      this.controls.target.set(0, 120, 0);
-      this.controls.update();
-    } catch (e) {
-      console.warn('OrbitControls não carregou. O modelo ficará estático.', e);
-    }
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.target.set(0, 120, 0);
+    this.controls.update();
 
-    // Chão simples
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(500, 500),
-      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.9 })
-    );
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ color: '#e2e8f0' }));
     floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
     this.scene.add(floor);
 
-    this.reconstruirModelo();
+    if (this.manager.blocosFachada.length) {
+      this.reconstruirAPartirDosBlocos(this.manager.blocosFachada);
+    } else {
+      // Armário padrão
+      this.reconstruirModelo({
+        largura: 200, altura: 220, profundidade: 60,
+        numPrateleiras: 3, espessura: 1.8
+      });
+    }
   }
 
-  reconstruirModelo() {
-    // Remove móveis antigos
-    while(this.scene.children.find(c => c.userData?.tipo === 'armario')) {
-      this.scene.remove(this.scene.children.find(c => c.userData?.tipo === 'armario'));
-    }
+  reconstruirAPartirDosBlocos(blocos) {
+    const { largura, altura } = this.manager.obterDimensoesGerais();
+    const profundidade = this.manager.profundidade;
+    this.reconstruirModelo({
+      largura, altura, profundidade,
+      numPrateleiras: 0, // prateleiras virão dos blocos
+      espessura: 1.8,
+      blocos: blocos
+    });
+  }
 
-    const { largura, altura, profundidade, numPrateleiras, espessura, corCorpo, corPorta } = this.params;
-    const grupo = new THREE.Group();
-    grupo.userData = { tipo: 'armario' };
+  reconstruirModelo(params) {
+    if (this.armarioGrupo) this.scene.remove(this.armarioGrupo);
+    this.armarioGrupo = new THREE.Group();
 
-    // Materiais
-    const matCorpo = new THREE.MeshStandardMaterial({ color: corCorpo, roughness: 0.5 });
-    const matPorta = new THREE.MeshStandardMaterial({ color: corPorta, roughness: 0.4 });
-
-    // Converter cm para unidades Three.js (1 = 1 cm)
+    const { largura, altura, profundidade, espessura = 1.8, blocos = [] } = params;
     const d = espessura;
+    const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
+    const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
 
-    // Laterais (esquerda, direita)
+    // Laterais
     const lateralGeo = new THREE.BoxGeometry(d, altura, profundidade);
-    const lateralEsq = new THREE.Mesh(lateralGeo, matCorpo);
-    lateralEsq.position.set(-largura/2 + d/2, altura/2, 0);
-    lateralEsq.castShadow = true; lateralEsq.receiveShadow = true;
-    grupo.add(lateralEsq);
-    const lateralDir = new THREE.Mesh(lateralGeo, matCorpo);
-    lateralDir.position.set(largura/2 - d/2, altura/2, 0);
-    lateralDir.castShadow = true; lateralDir.receiveShadow = true;
-    grupo.add(lateralDir);
+    const latE = new THREE.Mesh(lateralGeo, matCorpo); latE.position.set(-largura/2 + d/2, altura/2, 0); this.armarioGrupo.add(latE);
+    const latD = new THREE.Mesh(lateralGeo, matCorpo); latD.position.set(largura/2 - d/2, altura/2, 0); this.armarioGrupo.add(latD);
+    // Fundo e Teto
+    const fundo = new THREE.Mesh(new THREE.BoxGeometry(largura - 2*d, d, profundidade), matCorpo); fundo.position.set(0, d/2, 0); this.armarioGrupo.add(fundo);
+    const teto = new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo); teto.position.set(0, altura - d/2, 0); this.armarioGrupo.add(teto);
 
-    // Fundo
-    const fundoGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade);
-    const fundo = new THREE.Mesh(fundoGeo, matCorpo);
-    fundo.position.set(0, d/2, 0);
-    fundo.castShadow = true; fundo.receiveShadow = true;
-    grupo.add(fundo);
-
-    // Teto
-    const tetoGeo = new THREE.BoxGeometry(largura, d, profundidade);
-    const teto = new THREE.Mesh(tetoGeo, matCorpo);
-    teto.position.set(0, altura - d/2, 0);
-    teto.castShadow = true; teto.receiveShadow = true;
-    grupo.add(teto);
-
-    // Prateleiras internas
-    if (numPrateleiras > 0 && altura > 2*d) {
-      const alturaUtil = altura - 2*d;
-      const passo = alturaUtil / (numPrateleiras + 1);
-      const prateleiraGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade - 2*d);
-      for (let i = 1; i <= numPrateleiras; i++) {
-        const prateleira = new THREE.Mesh(prateleiraGeo, matCorpo);
-        prateleira.position.set(0, d + i * passo - d/2, 0);
-        prateleira.castShadow = true; prateleira.receiveShadow = true;
-        grupo.add(prateleira);
+    // Blocos da fachada
+    blocos.forEach(bloco => {
+      const w = bloco.width;
+      const h = bloco.height;
+      const x = bloco.x - largura/2 + w/2;
+      const y = bloco.y + h/2;
+      if (bloco.tipo === 'porta') {
+        const porta = new THREE.Mesh(new THREE.BoxGeometry(w, h, d*0.6), matPorta);
+        porta.position.set(x, y, profundidade/2 - d*0.3);
+        this.armarioGrupo.add(porta);
+      } else if (bloco.tipo === 'gaveta') {
+        const frente = new THREE.Mesh(new THREE.BoxGeometry(w, h, d*0.6), new THREE.MeshStandardMaterial({ color: '#b89a6b' }));
+        frente.position.set(x, y, profundidade/2 - d*0.3);
+        this.armarioGrupo.add(frente);
+      } else if (bloco.tipo === 'prateleira') {
+        const prat = new THREE.Mesh(new THREE.BoxGeometry(w, d, profundidade - 2*d), matCorpo);
+        prat.position.set(x, y, 0);
+        this.armarioGrupo.add(prat);
       }
-    }
+    });
 
-    // Portas de correr (duas, sobrepostas)
-    const larguraPorta = (largura - 2*d) / 2 + d*0.5; // pequena sobreposição
-    const portaGeo = new THREE.BoxGeometry(larguraPorta, altura - 2*d, d*0.6);
-    const portaEsq = new THREE.Mesh(portaGeo, matPorta);
-    portaEsq.position.set(-largura/2 + d + larguraPorta/2, altura/2, profundidade/2 - d*0.3);
-    portaEsq.castShadow = true; portaEsq.receiveShadow = true;
-    grupo.add(portaEsq);
-    const portaDir = new THREE.Mesh(portaGeo, matPorta);
-    portaDir.position.set(largura/2 - d - larguraPorta/2, altura/2, profundidade/2 - d*0.3 + d*0.6); // deslocada para trás
-    portaDir.castShadow = true; portaDir.receiveShadow = true;
-    grupo.add(portaDir);
-
-    // Puxadores (pequenas esferas)
-    const puxGeo = new THREE.SphereGeometry(1.2, 16, 16);
-    const matPux = new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.2 });
-    const posXPux = largura/2 - d - 10;
-    const pux1 = new THREE.Mesh(puxGeo, matPux);
-    pux1.position.set(posXPux, altura*0.75, profundidade/2 + 1);
-    grupo.add(pux1);
-    const pux2 = new THREE.Mesh(puxGeo, matPux);
-    pux2.position.set(posXPux, altura*0.25, profundidade/2 + 1);
-    grupo.add(pux2);
-
-    this.scene.add(grupo);
+    this.scene.add(this.armarioGrupo);
   }
 
   animar() {
     requestAnimationFrame(() => this.animar());
     if (this.controls) this.controls.update();
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  exportarPecas() {
-    const { largura, altura, profundidade, numPrateleiras, espessura } = this.params;
-    const d = espessura;
-    const pecas = [];
-
-    // Laterais
-    pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
-    pecas.push({ nome: 'Lateral Direita', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
-    // Fundo
-    pecas.push({ nome: 'Fundo', qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade} cm` });
-    // Teto
-    pecas.push({ nome: 'Teto', qtd: 1, dim: `${largura} x ${d} x ${profundidade} cm` });
-    // Prateleiras
-    if (numPrateleiras > 0) {
-      pecas.push({ nome: 'Prateleira', qtd: numPrateleiras, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d} cm` });
-    }
-    // Portas
-    pecas.push({ nome: 'Porta (correr)', qtd: 2, dim: `${(largura - 2*d) / 2 + d*0.5} x ${altura - 2*d} x ${d*0.6} cm` });
-
-    const textArea = document.getElementById('output-medidas');
-    if (textArea) {
-      textArea.value = pecas.map(p => `${p.nome} (${p.qtd}x): ${p.dim}`).join('\n');
-    }
+    if (this.renderer && this.scene && this.camera) this.renderer.render(this.scene, this.camera);
   }
 }
 
-// Função chamada pelo sistema ao ativar a aba Projetos
+// ==================== INICIALIZAÇÃO GLOBAL ====================
 window.iniciarProjetos = function() {
   const container = document.getElementById('view-projetos');
-  if (!container) return;
-  // Verifica se já foi inicializado
-  if (container.dataset.projetoIniciado === 'true') return;
+  if (!container || container.dataset.projetoIniciado === 'true') return;
   container.dataset.projetoIniciado = 'true';
   container.classList.remove('p-8', 'text-center', 'text-slate-500');
-  container.innerHTML = ''; // limpa placeholder
-  new ConfiguradorArmario(container);
+  container.innerHTML = '';
+  new ProjetosManager(container);
 };
