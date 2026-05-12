@@ -91,6 +91,12 @@
   </style>
 </head>
 <body class="bg-slate-50 font-sans antialiased">
+  
+<script>
+    if (!localStorage.getItem('rv_user')) {
+      window.location.replace('index.html');
+    }
+</script>
 
 <div class="flex h-screen overflow-hidden">
   
