@@ -161,7 +161,7 @@ function renderizarItens() {
       <div class="w-20 h-20 rounded-lg border bg-slate-100 flex items-center justify-center cursor-pointer overflow-hidden relative" onclick="this.querySelector('input[type=file]').click()">
         ${item.foto_url 
           ? `<img src="${item.foto_url}" class="w-full h-full object-cover" alt="Foto" style="position: absolute; inset: 0;">`
-          : `<i data-lucide="camera" class="w-8 h-8 text-slate-400"></i>`
+          : `<i data-lucide="camera" class="w-15 h-15 text-slate-400"></i>`
         }
         <input type="file" accept="image/*" class="hidden" onchange="window.uploadImagemItem(this, ${idx})">
       </div>
@@ -319,7 +319,7 @@ window.gerarPDF = async () => {
   const rowsHtml = itensAtivos.map((item, idx) => `
     <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
       <td style="padding: 8px;">
-        ${item.foto_url ? `<img src="${item.foto_url}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; vertical-align:middle;"> ` : ''}
+        ${item.foto_url ? `<img src="${item.foto_url}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; vertical-align:middle;"> ` : ''}
         ${item.nome}
       </td>
       <td style="padding: 8px;">${item.descricao}</td>
