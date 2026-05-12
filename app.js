@@ -1,5 +1,6 @@
 // app.js (sem imports)
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+window.supabaseClient = supabaseClient;
 
 let itens = [];
 let orcamentoAtualId = null;
