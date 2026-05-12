@@ -6,11 +6,11 @@ class ConfiguradorArmario {
   constructor(container) {
     this.container = container;
     this.params = {
-      largura: 200,
+      largura: 200,   // cm
       altura: 220,
       profundidade: 60,
       numPrateleiras: 3,
-      espessura: 1.8,
+      espessura: 1.8, // cm
       corCorpo: '#A67B5B',
       corPorta: '#8B5A2B',
     };
@@ -19,8 +19,14 @@ class ConfiguradorArmario {
 
   async init() {
     this.criarInterface();
-    this.criarCena();
-    this.animar();
+    try {
+      this.criarCena();
+      this.animar();
+    } catch (e) {
+      console.error('Erro ao criar a cena 3D:', e);
+      document.getElementById('canvas-container').innerHTML = 
+        '<p class="text-red-500 p-4">Erro ao carregar o visualizador 3D. Veja o console (F12).</p>';
+    }
   }
 
   criarInterface() {
@@ -53,9 +59,10 @@ class ConfiguradorArmario {
           </button>
           <textarea id="output-medidas" rows="6" class="w-full p-2 border rounded text-xs bg-slate-50" readonly></textarea>
         </div>
-        <div class="flex-1 relative rounded-xl overflow-hidden border shadow" id="canvas-container"></div>
+        <div class="flex-1 relative rounded-xl overflow-hidden border shadow" id="canvas-container" style="min-height: 400px; background: #e2e8f0;"></div>
       </div>
     `;
+
     this.bindEvents();
   }
 
@@ -86,16 +93,23 @@ class ConfiguradorArmario {
     this.scene.background = new THREE.Color('#f1f5f9');
 
     const container = document.getElementById('canvas-container');
-    this.camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 10, 1000);
+    if (!container) throw new Error('Container canvas-container não encontrado.');
+
+    // Garantir dimensões mínimas para o canvas
+    const w = container.clientWidth || 600;
+    const h = container.clientHeight || 400;
+
+    this.camera = new THREE.PerspectiveCamera(45, w / h, 10, 1000);
     this.camera.position.set(250, 180, 300);
     this.camera.lookAt(0, 120, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
+    // Luzes
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambient);
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -107,10 +121,16 @@ class ConfiguradorArmario {
     dirLight.shadow.camera.far = 600;
     this.scene.add(dirLight);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 120, 0);
-    this.controls.update();
+    // Controles de órbita (com verificação)
+    try {
+      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+      this.controls.target.set(0, 120, 0);
+      this.controls.update();
+    } catch (e) {
+      console.warn('OrbitControls não carregou. O modelo ficará estático.', e);
+    }
 
+    // Chão simples
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(500, 500),
       new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.9 })
@@ -123,6 +143,7 @@ class ConfiguradorArmario {
   }
 
   reconstruirModelo() {
+    // Remove móveis antigos
     while(this.scene.children.find(c => c.userData?.tipo === 'armario')) {
       this.scene.remove(this.scene.children.find(c => c.userData?.tipo === 'armario'));
     }
@@ -131,10 +152,14 @@ class ConfiguradorArmario {
     const grupo = new THREE.Group();
     grupo.userData = { tipo: 'armario' };
 
+    // Materiais
     const matCorpo = new THREE.MeshStandardMaterial({ color: corCorpo, roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: corPorta, roughness: 0.4 });
+
+    // Converter cm para unidades Three.js (1 = 1 cm)
     const d = espessura;
 
+    // Laterais (esquerda, direita)
     const lateralGeo = new THREE.BoxGeometry(d, altura, profundidade);
     const lateralEsq = new THREE.Mesh(lateralGeo, matCorpo);
     lateralEsq.position.set(-largura/2 + d/2, altura/2, 0);
@@ -145,18 +170,21 @@ class ConfiguradorArmario {
     lateralDir.castShadow = true; lateralDir.receiveShadow = true;
     grupo.add(lateralDir);
 
+    // Fundo
     const fundoGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade);
     const fundo = new THREE.Mesh(fundoGeo, matCorpo);
     fundo.position.set(0, d/2, 0);
     fundo.castShadow = true; fundo.receiveShadow = true;
     grupo.add(fundo);
 
+    // Teto
     const tetoGeo = new THREE.BoxGeometry(largura, d, profundidade);
     const teto = new THREE.Mesh(tetoGeo, matCorpo);
     teto.position.set(0, altura - d/2, 0);
     teto.castShadow = true; teto.receiveShadow = true;
     grupo.add(teto);
 
+    // Prateleiras internas
     if (numPrateleiras > 0 && altura > 2*d) {
       const alturaUtil = altura - 2*d;
       const passo = alturaUtil / (numPrateleiras + 1);
@@ -169,17 +197,19 @@ class ConfiguradorArmario {
       }
     }
 
-    const larguraPorta = (largura - 2*d) / 2 + d*0.5;
+    // Portas de correr (duas, sobrepostas)
+    const larguraPorta = (largura - 2*d) / 2 + d*0.5; // pequena sobreposição
     const portaGeo = new THREE.BoxGeometry(larguraPorta, altura - 2*d, d*0.6);
     const portaEsq = new THREE.Mesh(portaGeo, matPorta);
     portaEsq.position.set(-largura/2 + d + larguraPorta/2, altura/2, profundidade/2 - d*0.3);
     portaEsq.castShadow = true; portaEsq.receiveShadow = true;
     grupo.add(portaEsq);
     const portaDir = new THREE.Mesh(portaGeo, matPorta);
-    portaDir.position.set(largura/2 - d - larguraPorta/2, altura/2, profundidade/2 - d*0.3 + d*0.6);
+    portaDir.position.set(largura/2 - d - larguraPorta/2, altura/2, profundidade/2 - d*0.3 + d*0.6); // deslocada para trás
     portaDir.castShadow = true; portaDir.receiveShadow = true;
     grupo.add(portaDir);
 
+    // Puxadores (pequenas esferas)
     const puxGeo = new THREE.SphereGeometry(1.2, 16, 16);
     const matPux = new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.2 });
     const posXPux = largura/2 - d - 10;
@@ -195,7 +225,7 @@ class ConfiguradorArmario {
 
   animar() {
     requestAnimationFrame(() => this.animar());
-    this.controls.update();
+    if (this.controls) this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -203,14 +233,21 @@ class ConfiguradorArmario {
     const { largura, altura, profundidade, numPrateleiras, espessura } = this.params;
     const d = espessura;
     const pecas = [];
+
+    // Laterais
     pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
     pecas.push({ nome: 'Lateral Direita', qtd: 1, dim: `${d} x ${altura} x ${profundidade} cm` });
+    // Fundo
     pecas.push({ nome: 'Fundo', qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade} cm` });
+    // Teto
     pecas.push({ nome: 'Teto', qtd: 1, dim: `${largura} x ${d} x ${profundidade} cm` });
+    // Prateleiras
     if (numPrateleiras > 0) {
       pecas.push({ nome: 'Prateleira', qtd: numPrateleiras, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d} cm` });
     }
+    // Portas
     pecas.push({ nome: 'Porta (correr)', qtd: 2, dim: `${(largura - 2*d) / 2 + d*0.5} x ${altura - 2*d} x ${d*0.6} cm` });
+
     const textArea = document.getElementById('output-medidas');
     if (textArea) {
       textArea.value = pecas.map(p => `${p.nome} (${p.qtd}x): ${p.dim}`).join('\n');
@@ -218,12 +255,14 @@ class ConfiguradorArmario {
   }
 }
 
-// Função global chamada pelo sistema
+// Função chamada pelo sistema ao ativar a aba Projetos
 window.iniciarProjetos = function() {
   const container = document.getElementById('view-projetos');
-  if (!container || container.dataset.projetoIniciado === 'true') return;
+  if (!container) return;
+  // Verifica se já foi inicializado
+  if (container.dataset.projetoIniciado === 'true') return;
   container.dataset.projetoIniciado = 'true';
   container.classList.remove('p-8', 'text-center', 'text-slate-500');
-  container.innerHTML = '';
+  container.innerHTML = ''; // limpa placeholder
   new ConfiguradorArmario(container);
 };
