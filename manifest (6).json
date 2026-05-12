@@ -1,7 +1,7 @@
 {
-  "name": "RV Portal",
-  "short_name": "RV Portal",
-  "start_url": "/rvportal/index.html",
+  "name": "RV MDF",
+  "short_name": "RV MDF",
+  "start_url": "./sistema.html",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
