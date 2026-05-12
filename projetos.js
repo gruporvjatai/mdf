@@ -1,4 +1,4 @@
-// projetos.js – Editor 2D + 3D + Orçamento (completo, detalhes visuais)
+// projetos.js – Editor 2D + 3D + Orçamento (botão Flatma e gavetas corrigidas)
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -28,6 +28,10 @@ class ProjetosManager {
           <div class="flex items-center gap-2">
             <label class="text-xs font-bold text-slate-600">Profundidade (cm):</label>
             <input type="number" id="profundidade-input" value="60" min="30" max="80" class="w-16 p-1 border rounded text-xs" onchange="window.profundidadeProjeto = parseFloat(this.value)">
+            <!-- Botão Flatma ao lado -->
+            <button onclick="window.open('https://flatma.com/pt/create/designer', '_blank')" title="Abrir Flatma em nova aba" class="px-3 py-1 border border-[#b8a94e] text-[#b8a94e] rounded text-xs font-bold hover:bg-amber-50 transition">
+              📐 Flatma
+            </button>
           </div>
         </div>
         <div id="subaba-fachada" class="subaba-content flex-1"></div>
@@ -95,7 +99,7 @@ class ProjetosManager {
     const d = 1.8;
     const dims = this.obterDimensoesGerais();
     if (!dims) return pecas;
-    const { largura, altura, offsetY } = dims;
+    const { largura, altura, offsetX, offsetY } = dims;
     const profundidade = this.profundidade;
 
     pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
@@ -122,8 +126,8 @@ class ProjetosManager {
         pecas.push({ nome: `Porta (${p.w.toFixed(0)}x${p.h.toFixed(0)})`, qtd: sub, dim: `${subW.toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
       } else if (p.tipo === 'gaveta') {
         pecas.push({ nome: `Frente Gaveta (${subW.toFixed(0)}x${p.h.toFixed(0)})`, qtd: sub, dim: `${subW.toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
-        pecas.push({ nome: `Lateral Gaveta (${subW.toFixed(0)}x${profundidade-2})`, qtd: sub * 2, dim: `${d} x ${p.h.toFixed(0)} x ${profundidade-2}` });
-        pecas.push({ nome: `Fundo Gaveta (${subW.toFixed(0)}x${profundidade-2})`, qtd: sub, dim: `${subW.toFixed(0)} x ${d} x ${profundidade-2}` });
+        pecas.push({ nome: `Lateral Gaveta (${subW.toFixed(0)}x${profundidade - 2*d - 2})`, qtd: sub * 2, dim: `${d} x ${p.h.toFixed(0)} x ${profundidade - 2*d - 2}` });
+        pecas.push({ nome: `Fundo Gaveta (${subW.toFixed(0)}x${profundidade - 2*d - 2})`, qtd: sub, dim: `${subW.toFixed(0)} x ${d} x ${profundidade - 2*d - 2}` });
       } else if (p.tipo === 'fundo') {
         pecas.push({ nome: `Painel de Fundo (${p.w.toFixed(0)}x${p.h.toFixed(0)})`, qtd: 1, dim: `${p.w.toFixed(0)} x ${p.h.toFixed(0)} x ${d}` });
       }
@@ -235,7 +239,7 @@ class EditorFachada2D {
       let color;
       if (p.tipo === 'porta') color = 'rgba(139,90,43,0.6)';
       else if (p.tipo === 'gaveta') color = 'rgba(160,120,60,0.6)';
-      else color = 'rgba(200,200,200,0.5)'; // fundo
+      else color = 'rgba(200,200,200,0.5)';
       ctx.fillStyle = color;
       ctx.fillRect(p.x * this.escala, p.y * this.escala, p.w * this.escala, p.h * this.escala);
       ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2;
@@ -369,7 +373,7 @@ class EditorFachada2D {
   }
 }
 
-// ==================== CONFIGURADOR 3D ====================
+// ==================== CONFIGURADOR 3D (GAVETAS CORRIGIDAS) ====================
 class ConfiguradorArmario {
   constructor(container, manager) {
     this.container = container;
@@ -428,7 +432,7 @@ class ConfiguradorArmario {
 
     const { largura, altura, offsetX, offsetY } = dims;
     const profundidade = this.manager.profundidade;
-    const d = 1.8;
+    const d = 1.8; // espessura padrão
     const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
     const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
@@ -442,7 +446,7 @@ class ConfiguradorArmario {
       return { x: x3D, y: y3D };
     };
 
-    // Estrutura fixa (laterais, fundo, teto)
+    // ---------- ESTRUTURA FIXA (laterais, fundo, teto) ----------
     const leftX = offsetX;
     const rightX = offsetX + largura;
     const latEsq = new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo);
@@ -452,14 +456,16 @@ class ConfiguradorArmario {
     latDir.position.set(to3D(rightX, 0).x, altura / 2, 0);
     this.armarioGrupo.add(latDir);
 
-    const fundo = new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo);
-    fundo.position.set(0, d / 2, 0);
-    this.armarioGrupo.add(fundo);
+    // Fundo do armário (painel traseiro)
+    const fundoArmario = new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo);
+    fundoArmario.position.set(0, d / 2, 0);
+    this.armarioGrupo.add(fundoArmario);
+
     const teto = new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo);
     teto.position.set(0, altura - d / 2, 0);
     this.armarioGrupo.add(teto);
 
-    // Linhas horizontais → prateleiras
+    // ---------- LINHAS HORIZONTAIS → PRATELEIRAS ----------
     this.manager.linhas.forEach(linha => {
       if (Math.abs(linha.y1 - linha.y2) < 0.1) {
         const yCanvas = linha.y1;
@@ -475,7 +481,7 @@ class ConfiguradorArmario {
       }
     });
 
-    // Linhas verticais → divisórias
+    // ---------- LINHAS VERTICAIS → DIVISÓRIAS ----------
     this.manager.linhas.forEach(linha => {
       if (Math.abs(linha.x1 - linha.x2) < 0.1) {
         const xCanvas = linha.x1;
@@ -491,8 +497,9 @@ class ConfiguradorArmario {
       }
     });
 
-    // Preenchimentos (portas, gavetas, fundo)
-    const espessuraFrente = d * 0.8;
+    // ---------- PORTAS, GAVETAS E FUNDOS ----------
+    const espessuraFrente = d * 0.8;   // espessura do painel frontal
+
     this.manager.preenchimentos.forEach(p => {
       const sub = p.subdivisoes || 1;
       const subW = p.w / sub;
@@ -503,17 +510,23 @@ class ConfiguradorArmario {
         const cx = baseX3D + subW / 2 + i * subW;
         const cy = centroY3D;
 
+        // Posição Z da face frontal do móvel
+        const faceFrontalZ = profundidade / 2;
+
         if (p.tipo === 'porta') {
-          // Porta com contorno e puxador
+          // ---------- PORTA ----------
           const portaGeom = new THREE.BoxGeometry(subW, p.h, espessuraFrente);
           const porta = new THREE.Mesh(portaGeom, matPorta);
-          porta.position.set(cx, cy, profundidade / 2 - espessuraFrente / 2);
+          // centraliza na face frontal: a face externa fica em faceFrontalZ
+          porta.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
           this.armarioGrupo.add(porta);
 
+          // contorno
           const edges = new THREE.EdgesGeometry(portaGeom);
           const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: '#1e293b' }));
           porta.add(line);
 
+          // puxador
           const puxador = new THREE.Mesh(
             new THREE.SphereGeometry(1.5, 8, 8),
             new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.9, roughness: 0.2 })
@@ -522,16 +535,19 @@ class ConfiguradorArmario {
           porta.add(puxador);
 
         } else if (p.tipo === 'gaveta') {
-          // Gaveta completa (frente, corpo, friso)
+          // ---------- GAVETA ----------
+          // Frente (painel) – fica exatamente na face frontal
           const frenteGeom = new THREE.BoxGeometry(subW, p.h, espessuraFrente);
           const frente = new THREE.Mesh(frenteGeom, matGaveta);
-          frente.position.set(cx, cy, profundidade / 2 - espessuraFrente / 2);
+          frente.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
           this.armarioGrupo.add(frente);
 
+          // contorno da frente
           const edgesFrente = new THREE.EdgesGeometry(frenteGeom);
           const lineFrente = new THREE.LineSegments(edgesFrente, new THREE.LineBasicMaterial({ color: '#1e293b' }));
           frente.add(lineFrente);
 
+          // friso preto na base
           const friso = new THREE.Mesh(
             new THREE.BoxGeometry(subW - 0.4, 0.4, espessuraFrente + 0.3),
             new THREE.MeshBasicMaterial({ color: '#1e293b' })
@@ -539,32 +555,34 @@ class ConfiguradorArmario {
           friso.position.set(0, -p.h / 2 + 2.5, 0);
           frente.add(friso);
 
-          const profundidadeGaveta = profundidade - 5;
+          // Corpo da gaveta (laterais e fundo) – fica atrás da frente, sem ultrapassar o fundo do armário
+          const profundidadeCorpo = profundidade - 2 * d - 2;  // desconta laterais + folga
           const alturaCorpo = p.h - d * 2;
           const larguraCorpo = subW - d * 2;
 
-          const latGavetaEsq = new THREE.Mesh(
-            new THREE.BoxGeometry(d, alturaCorpo, profundidadeGaveta),
-            matGaveta
-          );
-          latGavetaEsq.position.set(cx - subW / 2 + d / 2, cy, -profundidadeGaveta / 2 + d);
-          this.armarioGrupo.add(latGavetaEsq);
-          const latGavetaDir = new THREE.Mesh(
-            new THREE.BoxGeometry(d, alturaCorpo, profundidadeGaveta),
-            matGaveta
-          );
-          latGavetaDir.position.set(cx + subW / 2 - d / 2, cy, -profundidadeGaveta / 2 + d);
-          this.armarioGrupo.add(latGavetaDir);
+          // A face frontal do corpo deve encostar na face traseira da frente
+          const zFrenteTraseira = faceFrontalZ - espessuraFrente;  // face traseira da frente
+          const zCentroCorpo = zFrenteTraseira - profundidadeCorpo / 2;
 
+          // Laterais da gaveta
+          const latGavetaGeo = new THREE.BoxGeometry(d, alturaCorpo, profundidadeCorpo);
+          const latEsq = new THREE.Mesh(latGavetaGeo, matGaveta);
+          latEsq.position.set(cx - subW / 2 + d / 2, cy, zCentroCorpo);
+          this.armarioGrupo.add(latEsq);
+          const latDir = new THREE.Mesh(latGavetaGeo, matGaveta);
+          latDir.position.set(cx + subW / 2 - d / 2, cy, zCentroCorpo);
+          this.armarioGrupo.add(latDir);
+
+          // Fundo da gaveta
           const fundoGaveta = new THREE.Mesh(
-            new THREE.BoxGeometry(larguraCorpo, d, profundidadeGaveta),
+            new THREE.BoxGeometry(larguraCorpo, d, profundidadeCorpo),
             matGaveta
           );
-          fundoGaveta.position.set(cx, cy - alturaCorpo / 2 + d / 2, -profundidadeGaveta / 2 + d);
+          fundoGaveta.position.set(cx, cy - alturaCorpo / 2 + d / 2, zCentroCorpo);
           this.armarioGrupo.add(fundoGaveta);
 
         } else if (p.tipo === 'fundo') {
-          // Painel de fundo
+          // Painel de fundo (interior)
           const painel = new THREE.Mesh(
             new THREE.BoxGeometry(subW, p.h, d),
             matFundo
