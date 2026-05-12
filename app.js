@@ -1,6 +1,5 @@
-// app.js (sem imports)
 const supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
-window.supabaseClient = supabaseClient;
+window.supabaseClient = supabaseClient;   
 
 let itens = [];
 let orcamentoAtualId = null;
@@ -221,54 +220,118 @@ window.salvarOrcamento = async () => {
   const status = document.getElementById('status').value;
   const obs = document.getElementById('observacoes').value.trim();
 
-  if (orcamentoAtualId) {
-    const { error: errOrc } = await supabaseClient.from('mdf_orcamentos').update({
-      cliente_nome: clienteNome,
-      status,
-      observacoes: obs
-    }).eq('id', orcamentoAtualId);
-    if (errOrc) return alert('Erro ao atualizar orçamento: ' + errOrc.message);
+  if (!clienteNome) {
+    alert("Selecione um cliente.");
+    return;
+  }
 
-    for (const item of itens.filter(i => i.removido && i.id)) {
-      await supabaseClient.from('mdf_itens').delete().eq('id', item.id);
+  // Filtra itens não removidos
+  const itensAtivos = itens.filter(i => !i.removido);
+  if (itensAtivos.length === 0) {
+    alert("Adicione pelo menos um item ao orçamento.");
+    return;
+  }
+
+  // Garante que preço e desconto são numéricos
+  itensAtivos.forEach(item => {
+    item.preco = parseFloat(item.preco) || 0;
+    item.desconto = parseFloat(item.desconto) || 0;
+  });
+
+  if (orcamentoAtualId) {
+    // ATUALIZAÇÃO DE ORÇAMENTO EXISTENTE
+    // 1. Atualiza cabeçalho
+    const { error: errOrc } = await supabaseClient
+      .from('mdf_orcamentos')
+      .update({
+        cliente_nome: clienteNome,
+        status,
+        observacoes: obs
+      })
+      .eq('id', orcamentoAtualId);
+
+    if (errOrc) {
+      alert('Erro ao atualizar orçamento: ' + errOrc.message);
+      return;
     }
-    for (const item of itens.filter(i => !i.removido)) {
+
+    // 2. Remove itens marcados para exclusão (soft delete)
+    const itensParaRemover = itens.filter(i => i.removido && i.id);
+    for (const item of itensParaRemover) {
+      const { error: errDel } = await supabaseClient
+        .from('mdf_itens')
+        .delete()
+        .eq('id', item.id);
+      if (errDel) console.warn("Erro ao remover item:", errDel);
+    }
+
+    // 3. Atualiza ou insere itens ativos
+    for (const item of itensAtivos) {
       const payload = {
         orcamento_id: orcamentoAtualId,
         nome: item.nome,
-        descricao: item.descricao,
+        descricao: item.descricao || '',
         preco: item.preco,
         desconto: item.desconto,
-        foto_url: item.foto_url
+        foto_url: item.foto_url || ''
       };
+
       if (item.id) {
-        await supabaseClient.from('mdf_itens').update(payload).eq('id', item.id);
+        // Atualiza item existente
+        const { error: errUpd } = await supabaseClient
+          .from('mdf_itens')
+          .update(payload)
+          .eq('id', item.id);
+        if (errUpd) console.warn("Erro ao atualizar item:", errUpd);
       } else {
-        await supabaseClient.from('mdf_itens').insert(payload);
+        // Insere novo item
+        const { error: errIns } = await supabaseClient
+          .from('mdf_itens')
+          .insert(payload);
+        if (errIns) console.warn("Erro ao inserir item:", errIns);
       }
     }
   } else {
-    const { data: novo, error: errOrc } = await supabaseClient.from('mdf_orcamentos').insert({
-      cliente_nome: clienteNome,
-      status,
-      observacoes: obs
-    }).select().single();
-    if (errOrc) return alert('Erro ao criar orçamento: ' + errOrc.message);
+    // NOVO ORÇAMENTO
+    // 1. Insere cabeçalho
+    const { data: novoOrc, error: errOrc } = await supabaseClient
+      .from('mdf_orcamentos')
+      .insert({
+        cliente_nome: clienteNome,
+        status,
+        observacoes: obs
+      })
+      .select()
+      .single();
 
-    const itensParaInserir = itens.filter(i => !i.removido).map(i => ({
-      orcamento_id: novo.id,
-      nome: i.nome,
-      descricao: i.descricao,
-      preco: i.preco,
-      desconto: i.desconto,
-      foto_url: i.foto_url
+    if (errOrc) {
+      alert('Erro ao criar orçamento: ' + errOrc.message);
+      return;
+    }
+
+    // 2. Insere itens
+    const itensParaInserir = itensAtivos.map(item => ({
+      orcamento_id: novoOrc.id,
+      nome: item.nome,
+      descricao: item.descricao || '',
+      preco: item.preco,
+      desconto: item.desconto,
+      foto_url: item.foto_url || ''
     }));
-    if (itensParaInserir.length) {
-      await supabaseClient.from('mdf_itens').insert(itensParaInserir);
+
+    const { error: errItens } = await supabaseClient
+      .from('mdf_itens')
+      .insert(itensParaInserir);
+
+    if (errItens) {
+      console.error("Erro ao inserir itens:", errItens);
+      alert("Orçamento criado, mas houve erro ao salvar os itens. Verifique os dados.");
     }
   }
 
-  window.fecharModal();
+  // Limpa o estado do modal e fecha
+  itens = [];
+  document.getElementById('modal-orcamento').classList.remove('active');
   window.renderOrcamentos();
   alert('Orçamento salvo com sucesso!');
 };
