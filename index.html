@@ -90,6 +90,9 @@
       <button onclick="navigate('projetos')" id="nav-projetos" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
         <i data-lucide="box"></i> <span class="font-medium text-sm">Projetos</span>
       </button>
+      <button onclick="navigate('flatma')" id="nav-flatma" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+        <i data-lucide="box"></i> <span class="font-medium text-sm">Flatma</span>
+      </button>
       <button onclick="navigate('vendas')" id="nav-vendas" class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
         <i data-lucide="shopping-cart"></i> <span class="font-medium text-sm">Vendas</span>
       </button>
@@ -165,6 +168,7 @@
 
     <!-- DEMAIS ABAS (PLACEHOLDERS) -->
     <div id="view-projetos" class="hidden-section p-8 text-center text-slate-500">Em breve - Projetos</div>
+    <div id="view-flatma" class="hidden-section p-0"></div>
     <div id="view-vendas" class="hidden-section p-8 text-center text-slate-500">Em breve - Vendas</div>
     <div id="view-clientes" class="hidden-section p-8 text-center text-slate-500">Em breve - Clientes</div>
     <div id="view-produtos" class="hidden-section p-8 text-center text-slate-500">Em breve - Produtos</div>
@@ -259,7 +263,9 @@
 
 <script src="config.js"></script>
 <script src="app.js"></script>
+<script src="flatma.js"></script>
 <script type="module" src="projetos.js"></script>
+
 <script>
   // Navegação entre abas
   function navigate(viewId) {
@@ -283,8 +289,11 @@
       window.renderOrcamentos();      
     }
     if (viewId === 'projetos') {
-      window.iniciarProjetos(); // Nova linha
-}
+      window.iniciarProjetos(); 
+    }
+    if (viewId === 'flatma') {
+      window.iniciarFlatma();
+    }
   }
   
   function fazerLogout() {
