@@ -234,14 +234,13 @@ class ProjetosManager {
     this.modalSelecaoOrcamento(resumo, fotoUrl);
   }
 
-  modalSelecaoOrcamento(resumo, fotoUrl) {
-  // Remove modal anterior se houver
-  const oldModal = document.getElementById('modal-selecao-orcamento');
+  modalListaOrcamentos(resumo, fotoUrl, orcamentos) {
+  const self = this;
+  const oldModal = document.getElementById('modal-lista-orcamentos');
   if (oldModal) oldModal.remove();
 
-  // Cria o container do modal com a classe correta para sobreposição e centralização
   const overlay = document.createElement('div');
-  overlay.id = 'modal-selecao-orcamento';
+  overlay.id = 'modal-lista-orcamentos';
   overlay.style.position = 'fixed';
   overlay.style.top = '0';
   overlay.style.left = '0';
@@ -253,34 +252,44 @@ class ProjetosManager {
   overlay.style.justifyContent = 'center';
   overlay.style.zIndex = '9999';
 
-  // Conteúdo do modal
   overlay.innerHTML = `
-    <div style="background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-width: 400px; width: 90%; padding: 20px; position: relative;">
+    <div style="background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-width: 500px; width: 90%; padding: 20px; position: relative;">
       <button style="position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" 
-              onclick="document.getElementById('modal-selecao-orcamento').remove()">&times;</button>
-      <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 15px;">Enviar para Orçamento</h3>
-      <p style="margin-bottom: 20px;">Deseja criar um <strong>novo orçamento</strong> ou adicionar a um <strong>existente</strong>?</p>
-      <div style="display: flex; gap: 10px; justify-content: flex-end;">
-        <button id="btn-novo-orcamento" style="padding: 10px 20px; background: #b8a94e; color: #1e293b; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Novo Orçamento</button>
-        <button id="btn-orcamento-existente" style="padding: 10px 20px; background: transparent; border: 1.5px solid #b8a94e; color: #b8a94e; border-radius: 8px; font-weight: bold; cursor: pointer;">Adicionar a Existente</button>
+              onclick="document.getElementById('modal-lista-orcamentos').remove()">&times;</button>
+      <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 15px;">Selecione o Orçamento</h3>
+      <p style="font-size: 0.9rem; margin-bottom: 15px;">Escolha um orçamento existente para adicionar o item:</p>
+      <div style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+        ${orcamentos.length === 0 ? '<p style="text-align: center; color: #64748b;">Nenhum orçamento encontrado.</p>' : 
+          orcamentos.map(o => `
+            <div class="orcamento-item" data-id="${o.id}" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: white; transition: background 0.2s;">
+              <div>
+                <span style="font-weight: 600;">#${o.id} - ${o.cliente_nome || 'Sem nome'}</span><br>
+                <span style="font-size: 0.8rem; color: #64748b;">${new Date(o.created_at).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <i data-lucide="plus-circle" style="color: #b8a94e;"></i>
+            </div>
+          `).join('')
+        }
+      </div>
+      <div style="margin-top: 15px; text-align: right;">
+        <button style="padding: 8px 16px; border: 1.5px solid #b8a94e; color: #b8a94e; background: transparent; border-radius: 8px; font-weight: bold; cursor: pointer;" 
+                onclick="document.getElementById('modal-lista-orcamentos').remove()">Cancelar</button>
       </div>
     </div>
   `;
 
   document.body.appendChild(overlay);
+  lucide.createIcons();
 
-  // Eventos
-  document.getElementById('btn-novo-orcamento').addEventListener('click', () => {
-    overlay.remove();
-    this.criarNovoOrcamento(resumo, fotoUrl);
+  // Usando arrow functions nos event listeners dos itens
+  overlay.querySelectorAll('.orcamento-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.dataset.id;
+      overlay.remove();
+      await self.adicionarItemAOrcamento(id, resumo, fotoUrl);
+    });
   });
 
-  document.getElementById('btn-orcamento-existente').addEventListener('click', () => {
-    overlay.remove();
-    this.selecionarOrcamentoExistente(resumo, fotoUrl);
-  });
-
-  // Fecha ao clicar fora do card
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
       overlay.remove();
