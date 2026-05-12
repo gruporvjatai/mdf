@@ -1,4 +1,4 @@
-// projetos.js – Editor 2D + 3D + Orçamento (estilo Flatma Sketch)
+// projetos.js – Editor 2D + 3D + Orçamento (revisão 3D fiel)
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -7,9 +7,8 @@ class ProjetosManager {
   constructor(container) {
     this.container = container;
     this.profundidade = 60;
-    this.linhas = [];      // { x1, y1, x2, y2 }
-    this.preenchimentos = []; // { x, y, w, h, tipo, subtipo }
-    this.idCounter = 0;
+    this.linhas = [];           // { x1, y1, x2, y2 } em cm
+    this.preenchimentos = [];   // { x, y, w, h, tipo, subdivisoes }
     this.init();
   }
 
@@ -65,34 +64,48 @@ class ProjetosManager {
     if (nome === '3d' && !this._3dIniciado) {
       this._3dIniciado = true;
       this.configurador3D = new ConfiguradorArmario(area, this);
+    } else if (nome === '3d' && this.configurador3D) {
+      // Atualiza o modelo 3D ao alternar para a aba
+      this.configurador3D.reconstruirModelo();
     }
     if (nome === 'orcamento') {
       this.atualizarOrcamento();
     }
   }
 
-  // ============== Geração da lista de peças ==============
+  obterDimensoesGerais() {
+    if (this.linhas.length > 0) {
+      const xs = this.linhas.flatMap(l => [l.x1, l.x2]);
+      const ys = this.linhas.flatMap(l => [l.y1, l.y2]);
+      // Considera o chão sempre como y=0, então a altura é o maior y
+      const maxY = Math.max(...ys, 0);
+      return {
+        largura: Math.max(...xs, 80) - Math.min(...xs, 0) + 3.6, // laterais de 1.8cm
+        altura: maxY + 3.6  // laterais de 1.8cm
+      };
+    }
+    return { largura: 200, altura: 220 };
+  }
+
   gerarListaPecas() {
+    // (mantido igual, sem alterações)
     const pecas = [];
-    const d = 1.8; // espessura
+    const d = 1.8;
     const { largura, altura } = this.obterDimensoesGerais();
     const profundidade = this.profundidade;
 
-    // Estrutura básica (laterais, fundo, teto)
     pecas.push({ nome: 'Lateral Esquerda', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
     pecas.push({ nome: 'Lateral Direita', qtd: 1, dim: `${d} x ${altura} x ${profundidade}` });
     pecas.push({ nome: 'Fundo', qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade}` });
     pecas.push({ nome: 'Teto', qtd: 1, dim: `${largura} x ${d} x ${profundidade}` });
 
-    // Prateleiras a partir das linhas horizontais internas
     this.linhas.forEach(linha => {
       const y = linha.y1;
-      if (y > 0 && y < altura) { // ignora linha no chão ou no topo
+      if (y > 0 && y < altura) {
         pecas.push({ nome: `Prateleira Fixa (y=${y.toFixed(0)})`, qtd: 1, dim: `${largura - 2*d} x ${d} x ${profundidade - 2*d}` });
       }
     });
 
-    // Portas e gavetas a partir dos preenchimentos
     this.preenchimentos.forEach(p => {
       if (p.tipo === 'porta') {
         pecas.push({ nome: `Porta (${p.w.toFixed(0)}x${p.h.toFixed(0)})`, qtd: p.subdivisoes || 1, dim: `${(p.w/(p.subdivisoes||1)).toFixed(0)} x ${p.h.toFixed(0)} x 1.2` });
@@ -102,15 +115,6 @@ class ProjetosManager {
     });
 
     return pecas;
-  }
-
-  obterDimensoesGerais() {
-    if (this.linhas.length > 0) {
-      const xs = this.linhas.flatMap(l => [l.x1, l.x2]);
-      const ys = this.linhas.flatMap(l => [l.y1, l.y2]);
-      return { largura: Math.max(...xs) - Math.min(...xs) + 3.6, altura: Math.max(...ys) - Math.min(...ys) + 3.6 };
-    }
-    return { largura: 200, altura: 220 };
   }
 
   atualizarOrcamento() {
@@ -134,14 +138,14 @@ class ProjetosManager {
   }
 }
 
-// ==================== EDITOR DE FACHADA 2D ====================
+// ==================== EDITOR DE FACHADA 2D (com botão limpar) ====================
 class EditorFachada2D {
   constructor(container, manager) {
     this.container = container;
     this.manager = manager;
     this.escala = 2;
     this.grade = 10;
-    this.modo = 'linha'; // 'linha' | 'retangulo'
+    this.modo = 'linha';
     this.drawing = false;
     this.startX = 0; this.startY = 0;
     this.currentPreview = null;
@@ -155,13 +159,13 @@ class EditorFachada2D {
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-[#b8a94e] text-white" data-tool="linha">✏️ Linha</button>
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-slate-200 text-slate-700" data-tool="retangulo">🚪 Porta / Gaveta</button>
           <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-red-100 text-red-700" data-tool="desfazer">↩️ Desfazer</button>
+          <button class="tool-btn px-3 py-1 rounded text-sm font-bold bg-red-300 text-red-900" data-tool="limpar">🗑️ Limpar Tudo</button>
           <span class="text-xs text-slate-500 ml-2">Grade: ${this.grade}cm | Linha = estrutura, Retângulo = portas/gavetas</span>
         </div>
         <div class="flex-1 bg-white rounded-xl border shadow-sm relative overflow-hidden" id="canvas-fachada" style="min-height:500px;">
           <canvas id="fachada-canvas" class="absolute inset-0 w-full h-full"></canvas>
         </div>
       </div>
-      <!-- Modal de tipo de preenchimento -->
       <div id="modal-tipo-preenchimento" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
         <div class="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full">
           <h3 class="font-bold text-lg mb-4">Selecionar tipo</h3>
@@ -205,7 +209,7 @@ class EditorFachada2D {
     for (let x=0; x<w; x+=passo) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
     for (let y=0; y<h; y+=passo) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
 
-    // Linhas estruturais
+    // Linhas
     ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 3;
     this.manager.linhas.forEach(l => {
       ctx.beginPath();
@@ -214,7 +218,7 @@ class EditorFachada2D {
       ctx.stroke();
     });
 
-    // Preenchimentos (portas/gavetas)
+    // Preenchimentos
     this.manager.preenchimentos.forEach(p => {
       ctx.fillStyle = p.tipo === 'porta' ? 'rgba(139,90,43,0.6)' : 'rgba(160,120,60,0.6)';
       ctx.fillRect(p.x * this.escala, p.y * this.escala, p.w * this.escala, p.h * this.escala);
@@ -227,12 +231,12 @@ class EditorFachada2D {
     // Preview
     if (this.currentPreview) {
       const { x, y, w, h, tipo } = this.currentPreview;
-      ctx.fillStyle = tipo === 'linha' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.08)';
       if (tipo === 'linha') {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(w, h); ctx.stroke();
         ctx.setLineDash([]);
       } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.08)';
         ctx.fillRect(x, y, w, h);
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
         ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
@@ -245,9 +249,12 @@ class EditorFachada2D {
       btn.addEventListener('click', (e) => {
         const tool = e.target.dataset.tool;
         if (tool === 'desfazer') {
-          // Remove último elemento (linha ou preenchimento)
           if (this.manager.preenchimentos.length) this.manager.preenchimentos.pop();
           else if (this.manager.linhas.length) this.manager.linhas.pop();
+          this.desenhar();
+        } else if (tool === 'limpar') {
+          this.manager.linhas = [];
+          this.manager.preenchimentos = [];
           this.desenhar();
         } else {
           this.modo = tool;
@@ -276,7 +283,11 @@ class EditorFachada2D {
     const { x, y } = this.obterCoordenadas(e);
     const sx = this.snap(x), sy = this.snap(y);
     if (this.modo === 'linha') {
-      this.currentPreview = { tipo: 'linha', x: this.startX * this.escala, y: this.startY * this.escala, w: sx * this.escala, h: sy * this.escala };
+      const dx = Math.abs(sx - this.startX);
+      const dy = Math.abs(sy - this.startY);
+      let x2 = sx, y2 = sy;
+      if (dx > dy) y2 = this.startY; else x2 = this.startX; // força ortogonal
+      this.currentPreview = { tipo: 'linha', x: this.startX * this.escala, y: this.startY * this.escala, w: x2 * this.escala, h: y2 * this.escala };
     } else {
       const w = Math.abs(sx - this.startX) * this.escala;
       const h = Math.abs(sy - this.startY) * this.escala;
@@ -294,11 +305,10 @@ class EditorFachada2D {
     const sx = this.snap(x), sy = this.snap(y);
 
     if (this.modo === 'linha') {
-      // Ajusta para linha reta (força horizontal ou vertical)
-      const dx = Math.abs(sx - this.startX);
-      const dy = Math.abs(sy - this.startY);
+      const dx = Math.abs(sx - this.startX), dy = Math.abs(sy - this.startY);
       let x1 = this.startX, y1 = this.startY, x2 = sx, y2 = sy;
-      if (dx > dy) y2 = y1; else x2 = x1; // força ortogonal
+      if (dx > dy) y2 = y1;
+      else x2 = x1;
       if (x1 !== x2 || y1 !== y2) {
         this.manager.linhas.push({ x1, y1, x2, y2 });
       }
@@ -345,7 +355,7 @@ class EditorFachada2D {
   }
 }
 
-// ==================== CONFIGURADOR 3D (REVISADO) ====================
+// ==================== CONFIGURADOR 3D (REVISADO COM COORDENADAS CORRIGIDAS) ====================
 class ConfiguradorArmario {
   constructor(container, manager) {
     this.container = container;
@@ -359,20 +369,20 @@ class ConfiguradorArmario {
   criarCena() {
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color('#f1f5f9');
     const w = this.container.clientWidth || 600, h = this.container.clientHeight || 400;
-    this.camera = new THREE.PerspectiveCamera(45, w/h, 10, 1000);
-    this.camera.position.set(250, 180, 300); this.camera.lookAt(0, 120, 0);
+    this.camera = new THREE.PerspectiveCamera(45, w/h, 10, 2000);
+    this.camera.position.set(300, 230, 400); this.camera.lookAt(0, 100, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(w, h); this.renderer.shadowMap.enabled = true;
     this.container.appendChild(this.renderer.domElement);
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(100,200,150); dir.castShadow = true; this.scene.add(dir);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(100,200,150); this.scene.add(dir);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0,120,0); this.controls.update();
+    this.controls.target.set(0, 100, 0); this.controls.update();
 
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.MeshStandardMaterial({color:'#e2e8f0'}));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(600,600), new THREE.MeshStandardMaterial({color:'#e2e8f0'}));
     floor.rotation.x = -Math.PI/2; this.scene.add(floor);
 
     this.reconstruirModelo();
@@ -384,41 +394,70 @@ class ConfiguradorArmario {
 
     const { largura, altura } = this.manager.obterDimensoesGerais();
     const profundidade = this.manager.profundidade;
-    const d = 1.8;
+    const d = 1.8; // espessura dos painéis
     const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
     const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
 
-    // Laterais, fundo, teto (sempre existem)
+    // Laterais (posicionadas nas extremidades)
     const lateralGeo = new THREE.BoxGeometry(d, altura, profundidade);
-    const latE = new THREE.Mesh(lateralGeo, matCorpo); latE.position.set(-largura/2+d/2, altura/2, 0); this.armarioGrupo.add(latE);
-    const latD = new THREE.Mesh(lateralGeo, matCorpo); latD.position.set(largura/2-d/2, altura/2, 0); this.armarioGrupo.add(latD);
-    const fundo = new THREE.Mesh(new THREE.BoxGeometry(largura-2*d, d, profundidade), matCorpo); fundo.position.set(0, d/2, 0); this.armarioGrupo.add(fundo);
-    const teto = new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo); teto.position.set(0, altura-d/2, 0); this.armarioGrupo.add(teto);
+    const latE = new THREE.Mesh(lateralGeo, matCorpo); latE.position.set(-largura/2 + d/2, altura/2, 0); this.armarioGrupo.add(latE);
+    const latD = new THREE.Mesh(lateralGeo, matCorpo); latD.position.set(largura/2 - d/2, altura/2, 0); this.armarioGrupo.add(latD);
 
-    // Prateleiras a partir das linhas horizontais
+    // Fundo
+    const fundoGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade);
+    const fundo = new THREE.Mesh(fundoGeo, matCorpo); fundo.position.set(0, d/2, 0); this.armarioGrupo.add(fundo);
+
+    // Teto
+    const tetoGeo = new THREE.BoxGeometry(largura, d, profundidade);
+    const teto = new THREE.Mesh(tetoGeo, matCorpo); teto.position.set(0, altura - d/2, 0); this.armarioGrupo.add(teto);
+
+    // Prateleiras (linhas horizontais internas)
     this.manager.linhas.forEach(linha => {
-      const y = (linha.y1 + linha.y2)/2;
-      if (y > 5 && y < altura-5) {
-        const pratGeo = new THREE.BoxGeometry(largura-2*d, d, profundidade-2*d);
+      const yCanvas = linha.y1; // coordenada Y do canvas
+      // Converte para Y do 3D: y3D = alturaTotal - yCanvas (porque canvas y=0 = topo)
+      const y3D = altura - yCanvas;
+      if (y3D > 5 && y3D < altura - 5) {
+        const pratGeo = new THREE.BoxGeometry(largura - 2*d, d, profundidade - 2*d);
         const prat = new THREE.Mesh(pratGeo, matCorpo);
-        prat.position.set(0, y, 0); this.armarioGrupo.add(prat);
+        prat.position.set(0, y3D, 0);
+        this.armarioGrupo.add(prat);
       }
     });
 
-    // Portas e gavetas a partir dos preenchimentos
+    // Portas e gavetas
+    const espessuraFrente = d * 0.8; // espessura da frente (um pouco menor)
     this.manager.preenchimentos.forEach(p => {
-      const numDiv = p.subdivisoes || 1;
-      const subW = p.w / numDiv;
-      for (let i = 0; i < numDiv; i++) {
-        const cx = p.x + subW/2 + i*subW - largura/2 + subW/2; // centraliza no armário
-        const cy = p.y + p.h/2;
+      const canvasX = p.x;
+      const canvasY = p.y;
+      const wTotal = p.w;
+      const hTotal = p.h;
+      const sub = p.subdivisoes || 1;
+      const subW = wTotal / sub;
+
+      // Converter para sistema 3D:
+      // x3D central: canvasX + subW*i + subW/2 - largura/2
+      // y3D: altura - (canvasY + hTotal/2)
+      const baseX3D = canvasX - largura/2; // canto esquerdo do preenchimento no mundo 3D
+      const yCentro3D = altura - (canvasY + hTotal/2);
+
+      for (let i = 0; i < sub; i++) {
+        const cx = baseX3D + subW/2 + i*subW; // centro da folha
+        const cy = yCentro3D;
         if (p.tipo === 'porta') {
-          const porta = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, d*0.6), matPorta);
-          porta.position.set(cx, cy, profundidade/2 - d*0.3); this.armarioGrupo.add(porta);
+          const porta = new THREE.Mesh(
+            new THREE.BoxGeometry(subW, hTotal, espessuraFrente),
+            matPorta
+          );
+          porta.position.set(cx, cy, profundidade/2 - espessuraFrente/2);
+          this.armarioGrupo.add(porta);
         } else {
-          const frente = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, d*0.6), matGaveta);
-          frente.position.set(cx, cy, profundidade/2 - d*0.3); this.armarioGrupo.add(frente);
+          const frente = new THREE.Mesh(
+            new THREE.BoxGeometry(subW, hTotal, espessuraFrente),
+            matGaveta
+          );
+          frente.position.set(cx, cy, profundidade/2 - espessuraFrente/2);
+          this.armarioGrupo.add(frente);
         }
       }
     });
