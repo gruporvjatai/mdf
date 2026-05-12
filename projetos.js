@@ -1,4 +1,4 @@
-// projetos.js – Editor 2D + 3D + Orçamento (botão Flatma e gavetas corrigidas)
+// projetos.js – Editor 2D + 3D + Detalhamento + Envio resumido ao orçamento
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -23,12 +23,11 @@ class ProjetosManager {
         <div class="flex gap-2 mb-4 bg-white p-2 rounded-xl shadow-sm border items-center">
           <button data-subaba="fachada" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm bg-[#b8a94e] text-white shadow">📐 Fachada 2D</button>
           <button data-subaba="3d" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-100">🧊 3D</button>
-          <button data-subaba="orcamento" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-100">🧾 Orçamento</button>
+          <button data-subaba="detalhamento" class="subaba-btn px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-100">📋 Detalhamento</button>
           <div class="flex-1"></div>
           <div class="flex items-center gap-2">
             <label class="text-xs font-bold text-slate-600">Profundidade (cm):</label>
             <input type="number" id="profundidade-input" value="60" min="30" max="80" class="w-16 p-1 border rounded text-xs" onchange="window.profundidadeProjeto = parseFloat(this.value)">
-            <!-- Botão Flatma ao lado -->
             <button onclick="window.open('https://flatma.com/pt/create/designer', '_blank')" title="Abrir Flatma em nova aba" class="px-3 py-1 border border-[#b8a94e] text-[#b8a94e] rounded text-xs font-bold hover:bg-amber-50 transition">
               📐 Flatma
             </button>
@@ -36,7 +35,7 @@ class ProjetosManager {
         </div>
         <div id="subaba-fachada" class="subaba-content flex-1"></div>
         <div id="subaba-3d" class="subaba-content flex-1 hidden"></div>
-        <div id="subaba-orcamento" class="subaba-content flex-1 hidden"></div>
+        <div id="subaba-detalhamento" class="subaba-content flex-1 hidden"></div>
       </div>
     `;
 
@@ -71,8 +70,8 @@ class ProjetosManager {
     } else if (nome === '3d' && this.configurador3D) {
       this.configurador3D.reconstruirModelo();
     }
-    if (nome === 'orcamento') {
-      this.atualizarOrcamento();
+    if (nome === 'detalhamento') {
+      this.atualizarDetalhamento();
     }
   }
 
@@ -92,6 +91,25 @@ class ProjetosManager {
       };
     }
     return null;
+  }
+
+  obterResumoProjeto() {
+    const dims = this.obterDimensoesGerais();
+    if (!dims) return null;
+    const { largura, altura } = dims;
+    const profundidade = this.profundidade;
+    // Contar portas e gavetas
+    let numPortas = 0, numGavetas = 0;
+    this.preenchimentos.forEach(p => {
+      if (p.tipo === 'porta') numPortas += (p.subdivisoes || 1);
+      else if (p.tipo === 'gaveta') numGavetas += (p.subdivisoes || 1);
+    });
+    // Cor padrão (no 3D usamos matPorta e matCorpo, mas podemos definir como "Branco" ou outra)
+    const cor = "Branco"; // pode ser parametrizado futuramente
+    return {
+      descricao: `Armário ${largura.toFixed(0)}x${altura.toFixed(0)}x${profundidade}cm, ${numPortas} porta(s) + ${numGavetas} gaveta(s), ${cor}`,
+      largura, altura, profundidade, numPortas, numGavetas, cor
+    };
   }
 
   gerarListaPecas() {
@@ -136,24 +154,108 @@ class ProjetosManager {
     return pecas;
   }
 
-  atualizarOrcamento() {
-    const area = document.getElementById('subaba-orcamento');
+  atualizarDetalhamento() {
+    const area = document.getElementById('subaba-detalhamento');
     if (!area) return;
     const pecas = this.gerarListaPecas();
     area.innerHTML = `
-      <div class="bg-white rounded-xl shadow border p-4">
-        <h3 class="font-bold text-lg mb-3">Peças do Projeto</h3>
-        <table class="w-full text-sm"><thead class="bg-slate-100"><tr><th class="p-2 text-left">Peça</th><th class="p-2 text-center">Qtd</th><th class="p-2 text-right">Dimensões (cm)</th></tr></thead>
-        <tbody>${pecas.map(p => `<tr class="border-b"><td class="p-2">${p.nome}</td><td class="p-2 text-center">${p.qtd}</td><td class="p-2 text-right">${p.dim}</td></tr>`).join('')}</tbody></table>
-        <button id="btn-enviar-orcamento" class="mt-4 btn-primary px-4 py-2 rounded-lg font-bold shadow">📤 Enviar para Orçamento</button>
+      <div class="bg-white rounded-xl shadow border p-4 flex flex-col h-full">
+        <h3 class="font-bold text-lg mb-3">Detalhamento do Projeto</h3>
+        <div class="flex-1 overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-100"><tr><th class="p-2 text-left">Peça</th><th class="p-2 text-center">Qtd</th><th class="p-2 text-right">Dimensões (cm)</th></tr></thead>
+            <tbody>${pecas.map(p => `<tr class="border-b"><td class="p-2">${p.nome}</td><td class="p-2 text-center">${p.qtd}</td><td class="p-2 text-right">${p.dim}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+        <div class="mt-4 flex gap-2 justify-end">
+          <button id="btn-imprimir-detalhamento" class="btn-outline px-4 py-2 rounded-lg font-bold">🖨️ Imprimir Detalhamento</button>
+          <button id="btn-enviar-resumo" class="btn-primary px-6 py-2 rounded-lg font-bold shadow">📤 Enviar para Orçamento (Resumo)</button>
+        </div>
       </div>`;
-    document.getElementById('btn-enviar-orcamento').addEventListener('click', () => {
-      if (typeof window.abrirNovoOrcamento === 'function') {
-        window.abrirNovoOrcamento();
-        setTimeout(() => { pecas.forEach(p => window.adicionarItem({ nome: p.nome, descricao: p.dim, preco: 0, desconto: 0 })); }, 500);
-        if (typeof navigate === 'function') navigate('orcamentos');
-      }
+
+    document.getElementById('btn-imprimir-detalhamento').addEventListener('click', () => {
+      this.imprimirDetalhamento(pecas);
     });
+
+    document.getElementById('btn-enviar-resumo').addEventListener('click', () => {
+      this.enviarResumoParaOrcamento();
+    });
+  }
+
+  imprimirDetalhamento(pecas) {
+    const html = `
+      <div style="font-family: Helvetica; padding: 20px; max-width: 800px; margin: auto; background: white;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2>RV PORTAL MADEIRAS</h2>
+          <h3>Detalhamento do Projeto</h3>
+        </div>
+        <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+          <thead><tr style="background:#eee;"><th style="padding:6px; text-align:left;">Peça</th><th style="padding:6px; text-align:center;">Qtd</th><th style="padding:6px; text-align:right;">Dimensões</th></tr></thead>
+          <tbody>${pecas.map(p => `<tr><td style="padding:6px;">${p.nome}</td><td style="text-align:center;">${p.qtd}</td><td style="text-align:right;">${p.dim}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    `;
+    const w = window.open('', '', 'width=800,height=600');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 500);
+  }
+
+  async enviarResumoParaOrcamento() {
+    const resumo = this.obterResumoProjeto();
+    if (!resumo) {
+      alert("Desenhe o projeto primeiro.");
+      return;
+    }
+
+    // Captura imagem do 3D (se disponível)
+    let fotoUrl = '';
+    if (this.configurador3D && this.configurador3D.renderer) {
+      try {
+        const canvas = this.configurador3D.renderer.domElement;
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (blob) {
+          const formData = new FormData();
+          formData.append('image', blob, 'captura.png');
+          const resp = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_KEY}`, {
+            method: 'POST',
+            body: formData
+          });
+          const data = await resp.json();
+          if (data.success) {
+            fotoUrl = data.data.url;
+          }
+        }
+      } catch (e) {
+        console.warn("Erro ao capturar/upload da imagem 3D:", e);
+      }
+    }
+
+    // Abre modal de novo orçamento (função do app.js)
+    if (typeof window.abrirNovoOrcamento !== 'function') {
+      alert("Módulo de orçamento não disponível.");
+      return;
+    }
+    window.abrirNovoOrcamento();
+
+    // Aguarda o modal abrir e adiciona o item resumido
+    setTimeout(() => {
+      if (typeof window.adicionarItem === 'function') {
+        window.adicionarItem({
+          nome: resumo.descricao,
+          descricao: `Projeto gerado automaticamente.`,
+          preco: 0,
+          desconto: 0,
+          foto_url: fotoUrl
+        });
+      }
+    }, 600);
+
+    // Opcional: navegar para a aba de orçamentos
+    if (typeof navigate === 'function') {
+      navigate('orcamentos');
+    }
   }
 }
 
@@ -432,7 +534,7 @@ class ConfiguradorArmario {
 
     const { largura, altura, offsetX, offsetY } = dims;
     const profundidade = this.manager.profundidade;
-    const d = 1.8; // espessura padrão
+    const d = 1.8;
     const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
     const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
     const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
@@ -446,149 +548,84 @@ class ConfiguradorArmario {
       return { x: x3D, y: y3D };
     };
 
-    // ---------- ESTRUTURA FIXA (laterais, fundo, teto) ----------
+    // ---------- ESTRUTURA FIXA ----------
     const leftX = offsetX;
     const rightX = offsetX + largura;
-    const latEsq = new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo);
-    latEsq.position.set(to3D(leftX, 0).x, altura / 2, 0);
-    this.armarioGrupo.add(latEsq);
-    const latDir = new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo);
-    latDir.position.set(to3D(rightX, 0).x, altura / 2, 0);
-    this.armarioGrupo.add(latDir);
+    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(leftX, 0).x).translateY(altura / 2));
+    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(rightX, 0).x).translateY(altura / 2));
+    // fundo
+    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo).translateY(d / 2));
+    // teto
+    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo).translateY(altura - d / 2));
 
-    // Fundo do armário (painel traseiro)
-    const fundoArmario = new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo);
-    fundoArmario.position.set(0, d / 2, 0);
-    this.armarioGrupo.add(fundoArmario);
-
-    const teto = new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo);
-    teto.position.set(0, altura - d / 2, 0);
-    this.armarioGrupo.add(teto);
-
-    // ---------- LINHAS HORIZONTAIS → PRATELEIRAS ----------
+    // prateleiras horizontais
     this.manager.linhas.forEach(linha => {
       if (Math.abs(linha.y1 - linha.y2) < 0.1) {
         const yCanvas = linha.y1;
         if (yCanvas > offsetY + 5 && yCanvas < offsetY + altura - 5) {
           const y3D = to3D(0, yCanvas).y;
-          const prat = new THREE.Mesh(
-            new THREE.BoxGeometry(largura - 2 * d, d, profundidade - 2 * d),
-            matCorpo
-          );
-          prat.position.set(0, y3D, 0);
-          this.armarioGrupo.add(prat);
+          this.armarioGrupo.add(new THREE.Mesh(
+            new THREE.BoxGeometry(largura - 2 * d, d, profundidade - 2 * d), matCorpo
+          ).translateY(y3D));
         }
       }
     });
 
-    // ---------- LINHAS VERTICAIS → DIVISÓRIAS ----------
+    // divisórias verticais
     this.manager.linhas.forEach(linha => {
       if (Math.abs(linha.x1 - linha.x2) < 0.1) {
         const xCanvas = linha.x1;
         if (xCanvas > offsetX + 5 && xCanvas < offsetX + largura - 5) {
           const x3D = to3D(xCanvas, 0).x;
-          const divisoria = new THREE.Mesh(
-            new THREE.BoxGeometry(d, altura, profundidade - 2 * d),
-            matCorpo
-          );
-          divisoria.position.set(x3D, altura / 2, 0);
-          this.armarioGrupo.add(divisoria);
+          this.armarioGrupo.add(new THREE.Mesh(
+            new THREE.BoxGeometry(d, altura, profundidade - 2 * d), matCorpo
+          ).translateX(x3D).translateY(altura / 2));
         }
       }
     });
 
-    // ---------- PORTAS, GAVETAS E FUNDOS ----------
-    const espessuraFrente = d * 0.8;   // espessura do painel frontal
-
+    // Portas, gavetas, fundos
+    const espessuraFrente = d * 0.8;
     this.manager.preenchimentos.forEach(p => {
       const sub = p.subdivisoes || 1;
       const subW = p.w / sub;
       const baseX3D = to3D(p.x, 0).x;
       const centroY3D = to3D(0, p.y + p.h / 2).y;
+      const faceFrontalZ = profundidade / 2;
 
       for (let i = 0; i < sub; i++) {
         const cx = baseX3D + subW / 2 + i * subW;
         const cy = centroY3D;
 
-        // Posição Z da face frontal do móvel
-        const faceFrontalZ = profundidade / 2;
-
         if (p.tipo === 'porta') {
-          // ---------- PORTA ----------
-          const portaGeom = new THREE.BoxGeometry(subW, p.h, espessuraFrente);
-          const porta = new THREE.Mesh(portaGeom, matPorta);
-          // centraliza na face frontal: a face externa fica em faceFrontalZ
+          const porta = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, espessuraFrente), matPorta);
           porta.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
           this.armarioGrupo.add(porta);
-
-          // contorno
-          const edges = new THREE.EdgesGeometry(portaGeom);
-          const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: '#1e293b' }));
-          porta.add(line);
-
-          // puxador
-          const puxador = new THREE.Mesh(
-            new THREE.SphereGeometry(1.5, 8, 8),
-            new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.9, roughness: 0.2 })
-          );
-          puxador.position.set(subW / 2 - 4, p.h / 2 - 10, espessuraFrente / 2 + 0.5);
-          porta.add(puxador);
-
+          // contorno e puxador
+          porta.add(new THREE.LineSegments(new THREE.EdgesGeometry(porta.geometry), new THREE.LineBasicMaterial({ color: '#1e293b' })));
+          const pux = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.9, roughness: 0.2 }));
+          pux.position.set(subW / 2 - 4, p.h / 2 - 10, espessuraFrente / 2 + 0.5);
+          porta.add(pux);
         } else if (p.tipo === 'gaveta') {
-          // ---------- GAVETA ----------
-          // Frente (painel) – fica exatamente na face frontal
-          const frenteGeom = new THREE.BoxGeometry(subW, p.h, espessuraFrente);
-          const frente = new THREE.Mesh(frenteGeom, matGaveta);
+          const frente = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, espessuraFrente), matGaveta);
           frente.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
           this.armarioGrupo.add(frente);
-
-          // contorno da frente
-          const edgesFrente = new THREE.EdgesGeometry(frenteGeom);
-          const lineFrente = new THREE.LineSegments(edgesFrente, new THREE.LineBasicMaterial({ color: '#1e293b' }));
-          frente.add(lineFrente);
-
-          // friso preto na base
-          const friso = new THREE.Mesh(
-            new THREE.BoxGeometry(subW - 0.4, 0.4, espessuraFrente + 0.3),
-            new THREE.MeshBasicMaterial({ color: '#1e293b' })
-          );
+          frente.add(new THREE.LineSegments(new THREE.EdgesGeometry(frente.geometry), new THREE.LineBasicMaterial({ color: '#1e293b' })));
+          const friso = new THREE.Mesh(new THREE.BoxGeometry(subW - 0.4, 0.4, espessuraFrente + 0.3), new THREE.MeshBasicMaterial({ color: '#1e293b' }));
           friso.position.set(0, -p.h / 2 + 2.5, 0);
           frente.add(friso);
 
-          // Corpo da gaveta (laterais e fundo) – fica atrás da frente, sem ultrapassar o fundo do armário
-          const profundidadeCorpo = profundidade - 2 * d - 2;  // desconta laterais + folga
+          const profundidadeCorpo = profundidade - 2 * d - 2;
           const alturaCorpo = p.h - d * 2;
           const larguraCorpo = subW - d * 2;
-
-          // A face frontal do corpo deve encostar na face traseira da frente
-          const zFrenteTraseira = faceFrontalZ - espessuraFrente;  // face traseira da frente
+          const zFrenteTraseira = faceFrontalZ - espessuraFrente;
           const zCentroCorpo = zFrenteTraseira - profundidadeCorpo / 2;
-
-          // Laterais da gaveta
-          const latGavetaGeo = new THREE.BoxGeometry(d, alturaCorpo, profundidadeCorpo);
-          const latEsq = new THREE.Mesh(latGavetaGeo, matGaveta);
-          latEsq.position.set(cx - subW / 2 + d / 2, cy, zCentroCorpo);
-          this.armarioGrupo.add(latEsq);
-          const latDir = new THREE.Mesh(latGavetaGeo, matGaveta);
-          latDir.position.set(cx + subW / 2 - d / 2, cy, zCentroCorpo);
-          this.armarioGrupo.add(latDir);
-
-          // Fundo da gaveta
-          const fundoGaveta = new THREE.Mesh(
-            new THREE.BoxGeometry(larguraCorpo, d, profundidadeCorpo),
-            matGaveta
-          );
-          fundoGaveta.position.set(cx, cy - alturaCorpo / 2 + d / 2, zCentroCorpo);
-          this.armarioGrupo.add(fundoGaveta);
-
+          const geoLat = new THREE.BoxGeometry(d, alturaCorpo, profundidadeCorpo);
+          this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(cx - subW / 2 + d / 2).translateY(cy).translateZ(zCentroCorpo));
+          this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(cx + subW / 2 - d / 2).translateY(cy).translateZ(zCentroCorpo));
+          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(larguraCorpo, d, profundidadeCorpo), matGaveta).translateX(cx).translateY(cy - alturaCorpo / 2 + d / 2).translateZ(zCentroCorpo));
         } else if (p.tipo === 'fundo') {
-          // Painel de fundo (interior)
-          const painel = new THREE.Mesh(
-            new THREE.BoxGeometry(subW, p.h, d),
-            matFundo
-          );
-          painel.position.set(cx, cy, -profundidade / 2 + d / 2);
-          this.armarioGrupo.add(painel);
+          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, d), matFundo).translateX(cx).translateY(cy).translateZ(-profundidade / 2 + d / 2));
         }
       }
     });
