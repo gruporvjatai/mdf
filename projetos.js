@@ -235,89 +235,91 @@ class ProjetosManager {
   }
 
   modalSelecaoOrcamento(resumo, fotoUrl) {
-    // Remove modal anterior se houver
-    const oldModal = document.getElementById('modal-selecao-orcamento');
-    if (oldModal) oldModal.remove();
+  // Remove modal anterior se houver
+  const oldModal = document.getElementById('modal-selecao-orcamento');
+  if (oldModal) oldModal.remove();
 
-    const modal = document.createElement('div');
-    modal.id = 'modal-selecao-orcamento';
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal-container" style="max-width: 400px; background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); transform: translateY(0);">
-        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 1.5rem; border-bottom: 1px solid #e2e8f0; background: #fef9c3; border-radius: 16px 16px 0 0;">
-          <h3 style="font-size: 1.2rem; font-weight: 700;">Enviar para Orçamento</h3>
-          <button class="btn-fechar" onclick="document.getElementById('modal-selecao-orcamento').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">&times;</button>
-        </div>
-        <div class="p-4">
-          <p class="mb-3">Deseja criar um <strong>novo orçamento</strong> ou adicionar a um <strong>existente</strong>?</p>
-          <div class="flex gap-2 justify-end">
-            <button id="btn-novo-orcamento" class="px-4 py-2 rounded-lg font-bold shadow" style="background: #b8a94e; color: #1e293b;">Novo Orçamento</button>
-            <button id="btn-orcamento-existente" class="px-4 py-2 rounded-lg font-bold" style="border: 1.5px solid #b8a94e; color: #b8a94e; background: transparent;">Adicionar a Existente</button>
-          </div>
-        </div>
+  // Cria o container do modal com a classe correta para sobreposição e centralização
+  const overlay = document.createElement('div');
+  overlay.id = 'modal-selecao-orcamento';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '9999';
+
+  // Conteúdo do modal
+  overlay.innerHTML = `
+    <div style="background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-width: 400px; width: 90%; padding: 20px; position: relative;">
+      <button style="position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" 
+              onclick="document.getElementById('modal-selecao-orcamento').remove()">&times;</button>
+      <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 15px;">Enviar para Orçamento</h3>
+      <p style="margin-bottom: 20px;">Deseja criar um <strong>novo orçamento</strong> ou adicionar a um <strong>existente</strong>?</p>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="btn-novo-orcamento" style="padding: 10px 20px; background: #b8a94e; color: #1e293b; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Novo Orçamento</button>
+        <button id="btn-orcamento-existente" style="padding: 10px 20px; background: transparent; border: 1.5px solid #b8a94e; color: #b8a94e; border-radius: 8px; font-weight: bold; cursor: pointer;">Adicionar a Existente</button>
       </div>
-    `;
+    </div>
+  `;
 
-    document.body.appendChild(modal);
+  document.body.appendChild(overlay);
 
-    document.getElementById('btn-novo-orcamento').addEventListener('click', () => {
-      modal.remove();
-      this.criarNovoOrcamento(resumo, fotoUrl);
-    });
+  // Eventos
+  document.getElementById('btn-novo-orcamento').addEventListener('click', () => {
+    overlay.remove();
+    this.criarNovoOrcamento(resumo, fotoUrl);
+  });
 
-    document.getElementById('btn-orcamento-existente').addEventListener('click', () => {
-      modal.remove();
-      this.selecionarOrcamentoExistente(resumo, fotoUrl);
-    });
-  }
+  document.getElementById('btn-orcamento-existente').addEventListener('click', () => {
+    overlay.remove();
+    this.selecionarOrcamentoExistente(resumo, fotoUrl);
+  });
 
-  criarNovoOrcamento(resumo, fotoUrl) {
-    if (typeof window.abrirNovoOrcamento !== 'function') {
-      alert("Módulo de orçamento não disponível.");
-      return;
+  // Fecha ao clicar fora do card
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
     }
-    window.abrirNovoOrcamento();
-    setTimeout(() => {
-      if (typeof window.adicionarItem === 'function') {
-        window.adicionarItem({
-          nome: resumo.descricao,
-          descricao: `Projeto gerado automaticamente.`,
-          preco: 0,
-          desconto: 0,
-          foto_url: fotoUrl
-        });
-      }
-    }, 600);
-    if (typeof navigate === 'function') {
-      navigate('orcamentos');
-    }
-  }
-
+  });
+}
+  
   async selecionarOrcamentoExistente(resumo, fotoUrl) {
-    if (typeof supabaseClient === 'undefined') {
-      // Tenta usar a global se existir, senão cria uma? No app.js a variável pode ser global.
-      // Vamos verificar se existe uma global chamada supabaseClient.
-      if (typeof window.supabaseClient !== 'undefined') {
-        window.supabaseClient = window.supabaseClient;
-      } else {
-        alert("Conexão com o banco não disponível.");
-        return;
-      }
-    }
+  // Verifica se o cliente Supabase está disponível globalmente
+  if (typeof window.supabaseClient === 'undefined') {
+    alert("Conexão com o banco de dados não disponível. Recarregue a página.");
+    return;
+  }
 
-    const { data: orcamentos, error } = await supabaseClient
+  try {
+    const { data: orcamentos, error } = await window.supabaseClient
       .from('mdf_orcamentos')
       .select('id, cliente_nome, created_at')
       .order('created_at', { ascending: false })
       .limit(20);
 
     if (error) {
-      alert("Erro ao buscar orçamentos.");
+      console.error("Erro ao buscar orçamentos:", error);
+      alert("Não foi possível carregar a lista de orçamentos. Tente novamente.");
       return;
     }
 
+    if (!orcamentos || orcamentos.length === 0) {
+      alert("Nenhum orçamento encontrado. Crie um novo orçamento primeiro.");
+      return;
+    }
+
+    // Abre modal com a lista (função já existente e funcional)
     this.modalListaOrcamentos(resumo, fotoUrl, orcamentos);
+  } catch (err) {
+    console.error("Erro inesperado ao buscar orçamentos:", err);
+    alert("Ocorreu um erro inesperado. Veja o console para mais detalhes.");
   }
+}
 
   modalListaOrcamentos(resumo, fotoUrl, orcamentos) {
     const oldModal = document.getElementById('modal-lista-orcamentos');
