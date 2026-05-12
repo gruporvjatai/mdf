@@ -666,115 +666,134 @@ class ConfiguradorArmario {
     this.scene.add(gridHelper);
   }
 
-  reconstruirModelo() {
-    if (this.armarioGrupo) {
-      this.scene.remove(this.armarioGrupo);
-      this.armarioGrupo = null;
+ reconstruirModelo() {
+  if (this.armarioGrupo) {
+    this.scene.remove(this.armarioGrupo);
+    this.armarioGrupo = null;
+  }
+
+  const dims = this.manager.obterDimensoesGerais();
+  if (!dims) return;
+
+  const { largura, altura, offsetX, offsetY } = dims;
+  const profundidade = this.manager.profundidade;
+  const d = 1.8;
+  const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
+  const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
+  const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
+  const matFundo = new THREE.MeshStandardMaterial({ color: '#d0c8b0', roughness: 0.6 });
+
+  this.armarioGrupo = new THREE.Group();
+
+  const to3D = (canvasX, canvasY) => {
+    const x3D = canvasX - offsetX - largura / 2;
+    const y3D = altura - (canvasY - offsetY);
+    return { x: x3D, y: y3D };
+  };
+
+  // Estrutura fixa (laterais, fundo, teto)
+  const leftX = offsetX;
+  const rightX = offsetX + largura;
+  this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(leftX, 0).x).translateY(altura / 2));
+  this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(rightX, 0).x).translateY(altura / 2));
+  this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo).translateY(d / 2));
+  this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo).translateY(altura - d / 2));
+
+  // Prateleiras (linhas horizontais)
+  this.manager.linhas.forEach(linha => {
+    if (Math.abs(linha.y1 - linha.y2) < 0.1) {
+      const yCanvas = linha.y1;
+      if (yCanvas > offsetY + 5 && yCanvas < offsetY + altura - 5) {
+        const y3D = to3D(0, yCanvas).y;
+        this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade - 2 * d), matCorpo).translateY(y3D));
+      }
     }
+  });
 
-    const dims = this.manager.obterDimensoesGerais();
-    if (!dims) return;
-
-    const { largura, altura, offsetX, offsetY } = dims;
-    const profundidade = this.manager.profundidade;
-    const d = 1.8;
-    const matCorpo = new THREE.MeshStandardMaterial({ color: '#A67B5B', roughness: 0.5 });
-    const matPorta = new THREE.MeshStandardMaterial({ color: '#8B5A2B', roughness: 0.4 });
-    const matGaveta = new THREE.MeshStandardMaterial({ color: '#b89a6b', roughness: 0.5 });
-    const matFundo = new THREE.MeshStandardMaterial({ color: '#d0c8b0', roughness: 0.6 });
-
-    this.armarioGrupo = new THREE.Group();
-
-    const to3D = (canvasX, canvasY) => {
-      const x3D = canvasX - offsetX - largura / 2;
-      const y3D = altura - (canvasY - offsetY);
-      return { x: x3D, y: y3D };
-    };
-
-    // Estrutura fixa
-    const leftX = offsetX;
-    const rightX = offsetX + largura;
-    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(leftX, 0).x).translateY(altura / 2));
-    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade), matCorpo).translateX(to3D(rightX, 0).x).translateY(altura / 2));
-    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade), matCorpo).translateY(d / 2));
-    this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura, d, profundidade), matCorpo).translateY(altura - d / 2));
-
-    // Prateleiras
-    this.manager.linhas.forEach(linha => {
-      if (Math.abs(linha.y1 - linha.y2) < 0.1) {
-        const yCanvas = linha.y1;
-        if (yCanvas > offsetY + 5 && yCanvas < offsetY + altura - 5) {
-          const y3D = to3D(0, yCanvas).y;
-          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(largura - 2 * d, d, profundidade - 2 * d), matCorpo).translateY(y3D));
-        }
+  // Divisórias (linhas verticais)
+  this.manager.linhas.forEach(linha => {
+    if (Math.abs(linha.x1 - linha.x2) < 0.1) {
+      const xCanvas = linha.x1;
+      if (xCanvas > offsetX + 5 && xCanvas < offsetX + largura - 5) {
+        const x3D = to3D(xCanvas, 0).x;
+        this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade - 2 * d), matCorpo).translateX(x3D).translateY(altura / 2));
       }
-    });
+    }
+  });
 
-    // Divisórias
-    this.manager.linhas.forEach(linha => {
-      if (Math.abs(linha.x1 - linha.x2) < 0.1) {
-        const xCanvas = linha.x1;
-        if (xCanvas > offsetX + 5 && xCanvas < offsetX + largura - 5) {
-          const x3D = to3D(xCanvas, 0).x;
-          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(d, altura, profundidade - 2 * d), matCorpo).translateX(x3D).translateY(altura / 2));
-        }
-      }
-    });
+  // Portas e gavetas
+  const espessuraFrente = d * 0.8;
+  this.manager.preenchimentos.forEach(p => {
+    const baseX3D = to3D(p.x, 0).x; // canto esquerdo da área
+    const centroY3D = to3D(0, p.y + p.h / 2).y; // centro vertical da área
+    const faceFrontalZ = profundidade / 2;
 
-    // Portas e gavetas
-    const espessuraFrente = d * 0.8;
-    this.manager.preenchimentos.forEach(p => {
+    // --- PORTAS (mantém divisão horizontal = largura) ---
+    if (p.tipo === 'porta') {
       const sub = p.subdivisoes || 1;
       const subW = p.w / sub;
-      const baseX3D = to3D(p.x, 0).x;
-      const centroY3D = to3D(0, p.y + p.h / 2).y;
-      const faceFrontalZ = profundidade / 2;
-
       for (let i = 0; i < sub; i++) {
         const cx = baseX3D + subW / 2 + i * subW;
-        const cy = centroY3D;
-
-        if (p.tipo === 'porta') {
-          const porta = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, espessuraFrente), matPorta);
-          porta.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
-          this.armarioGrupo.add(porta);
-          porta.add(new THREE.LineSegments(new THREE.EdgesGeometry(porta.geometry), new THREE.LineBasicMaterial({ color: '#1e293b' })));
-          const pux = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.9, roughness: 0.2 }));
-          pux.position.set(subW / 2 - 4, p.h / 2 - 10, espessuraFrente / 2 + 0.5);
-          porta.add(pux);
-        } else if (p.tipo === 'gaveta') {
-          const frente = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, espessuraFrente), matGaveta);
-          frente.position.set(cx, cy, faceFrontalZ - espessuraFrente / 2);
-          this.armarioGrupo.add(frente);
-          frente.add(new THREE.LineSegments(new THREE.EdgesGeometry(frente.geometry), new THREE.LineBasicMaterial({ color: '#1e293b' })));
-          const friso = new THREE.Mesh(new THREE.BoxGeometry(subW - 0.4, 0.4, espessuraFrente + 0.3), new THREE.MeshBasicMaterial({ color: '#1e293b' }));
-          friso.position.set(0, -p.h / 2 + 2.5, 0);
-          frente.add(friso);
-
-          const profundidadeCorpo = profundidade - 2 * d - 2;
-          const alturaCorpo = p.h - d * 2;
-          const larguraCorpo = subW - d * 2;
-          const zFrenteTraseira = faceFrontalZ - espessuraFrente;
-          const zCentroCorpo = zFrenteTraseira - profundidadeCorpo / 2;
-          const geoLat = new THREE.BoxGeometry(d, alturaCorpo, profundidadeCorpo);
-          this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(cx - subW / 2 + d / 2).translateY(cy).translateZ(zCentroCorpo));
-          this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(cx + subW / 2 - d / 2).translateY(cy).translateZ(zCentroCorpo));
-          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(larguraCorpo, d, profundidadeCorpo), matGaveta).translateX(cx).translateY(cy - alturaCorpo / 2 + d / 2).translateZ(zCentroCorpo));
-        } else if (p.tipo === 'fundo') {
-          this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, d), matFundo).translateX(cx).translateY(cy).translateZ(-profundidade / 2 + d / 2));
-        }
+        const porta = new THREE.Mesh(new THREE.BoxGeometry(subW, p.h, espessuraFrente), matPorta);
+        porta.position.set(cx, centroY3D, faceFrontalZ - espessuraFrente / 2);
+        this.armarioGrupo.add(porta);
+        // contorno e puxador
+        porta.add(new THREE.LineSegments(new THREE.EdgesGeometry(porta.geometry), new THREE.LineBasicMaterial({ color: '#1e293b' })));
+        const pux = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.9, roughness: 0.2 }));
+        pux.position.set(subW / 2 - 4, p.h / 2 - 10, espessuraFrente / 2 + 0.5);
+        porta.add(pux);
       }
-    });
+    }
 
-    this.scene.add(this.armarioGrupo);
-  }
+    // --- GAVETAS (CORRIGIDO: divisão vertical = altura) ---
+    else if (p.tipo === 'gaveta') {
+      const sub = p.subdivisoes || 1;
+      const subH = p.h / sub;                        // altura de cada gaveta
+      const centroX = baseX3D + p.w / 2;             // centro horizontal fixo
 
-  animar() {
-    requestAnimationFrame(() => this.animar());
-    if (this.controls) this.controls.update();
-    if (this.renderer && this.scene && this.camera) this.renderer.render(this.scene, this.camera);
-  }
+      for (let i = 0; i < sub; i++) {
+        // Posição vertical: a primeira gaveta fica no topo da área (maior Y), a última embaixo
+        const cy = centroY3D + (p.h / 2) - subH / 2 - i * subH;
+
+        // Frente (painel)
+        const frenteGeom = new THREE.BoxGeometry(p.w, subH, espessuraFrente);
+        const frente = new THREE.Mesh(frenteGeom, matGaveta);
+        frente.position.set(centroX, cy, faceFrontalZ - espessuraFrente / 2);
+        this.armarioGrupo.add(frente);
+        // contorno da frente
+        frente.add(new THREE.LineSegments(new THREE.EdgesGeometry(frenteGeom), new THREE.LineBasicMaterial({ color: '#1e293b' })));
+        // friso na base
+        const friso = new THREE.Mesh(
+          new THREE.BoxGeometry(p.w - 0.4, 0.4, espessuraFrente + 0.3),
+          new THREE.MeshBasicMaterial({ color: '#1e293b' })
+        );
+        friso.position.set(0, -subH / 2 + 2.5, 0);
+        frente.add(friso);
+
+        // Corpo (laterais e fundo)
+        const profundidadeCorpo = profundidade - 2 * d - 2;
+        const alturaCorpo = subH - d * 2;
+        const larguraCorpo = p.w - d * 2;
+        const zFrenteTraseira = faceFrontalZ - espessuraFrente;
+        const zCentroCorpo = zFrenteTraseira - profundidadeCorpo / 2;
+
+        const geoLat = new THREE.BoxGeometry(d, alturaCorpo, profundidadeCorpo);
+        this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(centroX - p.w / 2 + d / 2).translateY(cy).translateZ(zCentroCorpo));
+        this.armarioGrupo.add(new THREE.Mesh(geoLat, matGaveta).translateX(centroX + p.w / 2 - d / 2).translateY(cy).translateZ(zCentroCorpo));
+        this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(larguraCorpo, d, profundidadeCorpo), matGaveta).translateX(centroX).translateY(cy - alturaCorpo / 2 + d / 2).translateZ(zCentroCorpo));
+      }
+    }
+
+    // --- FUNDO (painel cego) ---
+    else if (p.tipo === 'fundo') {
+      const centroX = baseX3D + p.w / 2;
+      this.armarioGrupo.add(new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, d), matFundo).translateX(centroX).translateY(centroY3D).translateZ(-profundidade / 2 + d / 2));
+    }
+  });
+
+  this.scene.add(this.armarioGrupo);
 }
+  
 
 // ==================== INICIALIZAÇÃO GLOBAL ====================
 window.iniciarProjetos = function () {
