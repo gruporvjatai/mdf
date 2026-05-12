@@ -207,7 +207,6 @@ class ProjetosManager {
       return;
     }
 
-    // Captura imagem do 3D (se disponível)
     let fotoUrl = '';
     if (this.configurador3D && this.configurador3D.renderer) {
       try {
@@ -230,204 +229,156 @@ class ProjetosManager {
       }
     }
 
-    // Modal de seleção: novo ou existente
     this.modalSelecaoOrcamento(resumo, fotoUrl);
   }
 
+  // ─── MODAL DE SELEÇÃO: NOVO OU EXISTENTE ─────────────────────
   modalSelecaoOrcamento(resumo, fotoUrl) {
-  // Verificação rápida para garantir que o método está acessível
-  if (typeof this.criarNovoOrcamento !== 'function') {
-    console.error("Método criarNovoOrcamento não encontrado. Verifique a classe ProjetosManager.");
-    alert("Erro interno: função não disponível.");
-    return;
+    const self = this;
+
+    const oldModal = document.getElementById('modal-selecao-orcamento');
+    if (oldModal) oldModal.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-selecao-orcamento';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
+
+    overlay.innerHTML = `
+      <div style="background:white; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.2); max-width:400px; width:90%; padding:20px; position:relative;">
+        <button style="position:absolute; top:10px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#64748b;" 
+                onclick="document.getElementById('modal-selecao-orcamento').remove()">&times;</button>
+        <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:15px;">Enviar para Orçamento</h3>
+        <p style="margin-bottom:20px;">Deseja criar um <strong>novo orçamento</strong> ou adicionar a um <strong>existente</strong>?</p>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-novo-orcamento" style="padding:10px 20px; background:#b8a94e; color:#1e293b; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Novo Orçamento</button>
+          <button id="btn-orcamento-existente" style="padding:10px 20px; background:transparent; border:1.5px solid #b8a94e; color:#b8a94e; border-radius:8px; font-weight:bold; cursor:pointer;">Adicionar a Existente</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById('btn-novo-orcamento').addEventListener('click', () => {
+      overlay.remove();
+      self.criarNovoOrcamento(resumo, fotoUrl);
+    });
+
+    document.getElementById('btn-orcamento-existente').addEventListener('click', () => {
+      overlay.remove();
+      self.selecionarOrcamentoExistente(resumo, fotoUrl);
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
   }
 
-  const self = this; // preserva o contexto
+  // ─── CRIA UM NOVO ORÇAMENTO E ADICIONA O ITEM ─────────────────
+  criarNovoOrcamento(resumo, fotoUrl) {
+    if (typeof window.abrirNovoOrcamento !== 'function') {
+      alert("Módulo de orçamento não disponível.");
+      return;
+    }
+    window.abrirNovoOrcamento();
+    setTimeout(() => {
+      if (typeof window.adicionarItem === 'function') {
+        window.adicionarItem({
+          nome: resumo.descricao,
+          descricao: `Projeto gerado automaticamente.`,
+          preco: 0,
+          desconto: 0,
+          foto_url: fotoUrl
+        });
+      }
+    }, 600);
+    if (typeof navigate === 'function') {
+      navigate('orcamentos');
+    }
+  }
 
-  // Remove modal anterior
-  const oldModal = document.getElementById('modal-selecao-orcamento');
-  if (oldModal) oldModal.remove();
+  // ─── BUSCA ORÇAMENTOS EXISTENTES E ABRE LISTA ────────────────
+  async selecionarOrcamentoExistente(resumo, fotoUrl) {
+    if (typeof window.supabaseClient === 'undefined') {
+      alert("Conexão com o banco de dados indisponível. Recarregue a página.");
+      return;
+    }
 
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-selecao-orcamento';
-  overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
+    try {
+      const { data: orcamentos, error } = await window.supabaseClient
+        .from('mdf_orcamentos')
+        .select('id, cliente_nome, created_at')
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-  overlay.innerHTML = `
-    <div style="background:white; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.2); max-width:400px; width:90%; padding:20px; position:relative;">
-      <button style="position:absolute; top:10px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#64748b;" 
-              onclick="document.getElementById('modal-selecao-orcamento').remove()">&times;</button>
-      <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:15px;">Enviar para Orçamento</h3>
-      <p style="margin-bottom:20px;">Deseja criar um <strong>novo orçamento</strong> ou adicionar a um <strong>existente</strong>?</p>
-      <div style="display:flex; gap:10px; justify-content:flex-end;">
-        <button id="btn-novo-orcamento" style="padding:10px 20px; background:#b8a94e; color:#1e293b; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Novo Orçamento</button>
-        <button id="btn-orcamento-existente" style="padding:10px 20px; background:transparent; border:1.5px solid #b8a94e; color:#b8a94e; border-radius:8px; font-weight:bold; cursor:pointer;">Adicionar a Existente</button>
-      </div>
-    </div>
-  `;
+      if (error) {
+        console.error("Erro ao buscar orçamentos:", error);
+        alert("Falha ao carregar orçamentos.");
+        return;
+      }
 
-  document.body.appendChild(overlay);
+      if (!orcamentos || orcamentos.length === 0) {
+        alert("Nenhum orçamento encontrado. Crie um novo primeiro.");
+        return;
+      }
 
-  // Eventos usando arrow functions e self
-  document.getElementById('btn-novo-orcamento').addEventListener('click', () => {
-    overlay.remove();
-    self.criarNovoOrcamento(resumo, fotoUrl);
-  });
+      this.modalListaOrcamentos(resumo, fotoUrl, orcamentos);
+    } catch (err) {
+      console.error("Erro inesperado:", err);
+      alert("Ocorreu um erro. Consulte o console.");
+    }
+  }
 
-  document.getElementById('btn-orcamento-existente').addEventListener('click', () => {
-    overlay.remove();
-    self.selecionarOrcamentoExistente(resumo, fotoUrl);
-  });
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-}
-
+  // ─── MODAL COM LISTA DE ORÇAMENTOS ────────────────────────────
   modalListaOrcamentos(resumo, fotoUrl, orcamentos) {
-  const self = this;
-  const oldModal = document.getElementById('modal-lista-orcamentos');
-  if (oldModal) oldModal.remove();
+    const self = this;
+    const oldModal = document.getElementById('modal-lista-orcamentos');
+    if (oldModal) oldModal.remove();
 
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-lista-orcamentos';
-  overlay.style.position = 'fixed';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100vw';
-  overlay.style.height = '100vh';
-  overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-  overlay.style.display = 'flex';
-  overlay.style.alignItems = 'center';
-  overlay.style.justifyContent = 'center';
-  overlay.style.zIndex = '9999';
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-lista-orcamentos';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
 
-  overlay.innerHTML = `
-    <div style="background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-width: 500px; width: 90%; padding: 20px; position: relative;">
-      <button style="position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" 
-              onclick="document.getElementById('modal-lista-orcamentos').remove()">&times;</button>
-      <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 15px;">Selecione o Orçamento</h3>
-      <p style="font-size: 0.9rem; margin-bottom: 15px;">Escolha um orçamento existente para adicionar o item:</p>
-      <div style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
-        ${orcamentos.length === 0 ? '<p style="text-align: center; color: #64748b;">Nenhum orçamento encontrado.</p>' : 
-          orcamentos.map(o => `
-            <div class="orcamento-item" data-id="${o.id}" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: white; transition: background 0.2s;">
+    overlay.innerHTML = `
+      <div style="background:white; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.2); max-width:500px; width:90%; padding:20px; position:relative;">
+        <button style="position:absolute; top:10px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#64748b;" 
+                onclick="document.getElementById('modal-lista-orcamentos').remove()">&times;</button>
+        <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:15px;">Selecione o Orçamento</h3>
+        <p style="font-size:0.9rem; margin-bottom:15px;">Escolha um orçamento existente para adicionar o item:</p>
+        <div style="max-height:300px; overflow-y:auto;">
+          ${orcamentos.map(o => `
+            <div class="orcamento-item" data-id="${o.id}" style="padding:12px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; background:white; transition:background 0.2s;">
               <div>
-                <span style="font-weight: 600;">#${o.id} - ${o.cliente_nome || 'Sem nome'}</span><br>
-                <span style="font-size: 0.8rem; color: #64748b;">${new Date(o.created_at).toLocaleDateString('pt-BR')}</span>
+                <span style="font-weight:600;">#${o.id} - ${o.cliente_nome || 'Sem nome'}</span><br>
+                <span style="font-size:0.8rem; color:#64748b;">${new Date(o.created_at).toLocaleDateString('pt-BR')}</span>
               </div>
-              <i data-lucide="plus-circle" style="color: #b8a94e;"></i>
+              <i data-lucide="plus-circle" style="color:#b8a94e;"></i>
             </div>
-          `).join('')
-        }
+          `).join('')}
+        </div>
+        <div style="margin-top:15px; text-align:right;">
+          <button style="padding:8px 16px; border:1.5px solid #b8a94e; color:#b8a94e; background:transparent; border-radius:8px; font-weight:bold; cursor:pointer;" 
+                  onclick="document.getElementById('modal-lista-orcamentos').remove()">Cancelar</button>
+        </div>
       </div>
-      <div style="margin-top: 15px; text-align: right;">
-        <button style="padding: 8px 16px; border: 1.5px solid #b8a94e; color: #b8a94e; background: transparent; border-radius: 8px; font-weight: bold; cursor: pointer;" 
-                onclick="document.getElementById('modal-lista-orcamentos').remove()">Cancelar</button>
-      </div>
-    </div>
-  `;
+    `;
 
-  document.body.appendChild(overlay);
-  lucide.createIcons();
+    document.body.appendChild(overlay);
+    lucide.createIcons();
 
-  // Usando arrow functions nos event listeners dos itens
-  overlay.querySelectorAll('.orcamento-item').forEach(el => {
-    el.addEventListener('click', async () => {
-      const id = el.dataset.id;
-      overlay.remove();
-      await self.adicionarItemAOrcamento(id, resumo, fotoUrl);
+    overlay.querySelectorAll('.orcamento-item').forEach(el => {
+      el.addEventListener('click', async () => {
+        const id = el.dataset.id;
+        overlay.remove();
+        await self.adicionarItemAOrcamento(id, resumo, fotoUrl);
+      });
     });
-  });
 
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.remove();
-    }
-  });
-}
-  
- async selecionarOrcamentoExistente(resumo, fotoUrl) {
-  if (typeof window.supabaseClient === 'undefined') {
-    alert("Conexão com o banco de dados indisponível. Recarregue a página.");
-    return;
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
   }
 
-  try {
-    const { data: orcamentos, error } = await window.supabaseClient
-      .from('mdf_orcamentos')
-      .select('id, cliente_nome, created_at')
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    if (error) {
-      console.error("Erro ao buscar orçamentos:", error);
-      alert("Falha ao carregar orçamentos.");
-      return;
-    }
-
-    if (!orcamentos || orcamentos.length === 0) {
-      alert("Nenhum orçamento encontrado. Crie um novo primeiro.");
-      return;
-    }
-
-    this.modalListaOrcamentos(resumo, fotoUrl, orcamentos);
-  } catch (err) {
-    console.error("Erro inesperado:", err);
-    alert("Ocorreu um erro. Consulte o console.");
-  }
-}
-
- modalListaOrcamentos(resumo, fotoUrl, orcamentos) {
-  const self = this;
-  const oldModal = document.getElementById('modal-lista-orcamentos');
-  if (oldModal) oldModal.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-lista-orcamentos';
-  overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
-
-  overlay.innerHTML = `
-    <div style="background:white; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.2); max-width:500px; width:90%; padding:20px; position:relative;">
-      <button style="position:absolute; top:10px; right:15px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#64748b;" 
-              onclick="document.getElementById('modal-lista-orcamentos').remove()">&times;</button>
-      <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:15px;">Selecione o Orçamento</h3>
-      <p style="font-size:0.9rem; margin-bottom:15px;">Escolha um orçamento existente para adicionar o item:</p>
-      <div style="max-height:300px; overflow-y:auto;">
-        ${orcamentos.map(o => `
-          <div class="orcamento-item" data-id="${o.id}" style="padding:12px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; background:white; transition:background 0.2s;">
-            <div>
-              <span style="font-weight:600;">#${o.id} - ${o.cliente_nome || 'Sem nome'}</span><br>
-              <span style="font-size:0.8rem; color:#64748b;">${new Date(o.created_at).toLocaleDateString('pt-BR')}</span>
-            </div>
-            <i data-lucide="plus-circle" style="color:#b8a94e;"></i>
-          </div>
-        `).join('')}
-      </div>
-      <div style="margin-top:15px; text-align:right;">
-        <button style="padding:8px 16px; border:1.5px solid #b8a94e; color:#b8a94e; background:transparent; border-radius:8px; font-weight:bold; cursor:pointer;" 
-                onclick="document.getElementById('modal-lista-orcamentos').remove()">Cancelar</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-  lucide.createIcons();
-
-  // Eventos nos itens da lista
-  overlay.querySelectorAll('.orcamento-item').forEach(el => {
-    el.addEventListener('click', async () => {
-      const id = el.dataset.id;
-      overlay.remove();
-      await self.adicionarItemAOrcamento(id, resumo, fotoUrl);
-    });
-  });
-
-  // Fecha ao clicar fora
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-}
-
+  // ─── ADICIONA O ITEM A UM ORÇAMENTO EXISTENTE ────────────────
   async adicionarItemAOrcamento(orcamentoId, resumo, fotoUrl) {
     if (typeof window.editarOrcamento !== 'function') {
       alert("Função de edição de orçamento não disponível.");
